@@ -1,0 +1,214 @@
+import AppKit
+import SimpleBlockCore
+import SwiftUI
+
+/// Borderless panels can't take keyboard focus unless told they can.
+private final class PromptPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
+private final class PromptText: ObservableObject {
+    @Published var value = ""
+}
+
+/// The reason prompt: a glass panel above all windows, over a blurred backdrop on every screen,
+/// so the gated app's window can't be seen even when it briefly unhides itself. One at a time.
+/// ⌘↵ submits once there are enough words, Esc cancels.
+@MainActor
+final class PromptController {
+    private var panel: NSPanel?
+    private var shields: [NSPanel] = []
+    private var keyMonitor: Any?
+    /// Bundle ID of the app the prompt is for, nil when closed.
+    private(set) var bundleId: String?
+    var isShowing: Bool { panel != nil }
+
+    func show(app: GatedApp, trigger: Trigger, nthToday: Int, minutes: Int,
+              onSubmit: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+        let text = PromptText()
+        let host = NSHostingView(rootView: PromptView(
+            app: app, trigger: trigger, nthToday: nthToday, minutes: minutes, text: text,
+            onSubmit: { onSubmit(text.value) }, onCancel: onCancel))
+        let size = host.fittingSize
+
+        let glass = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
+        glass.material = .hudWindow
+        glass.blendingMode = .behindWindow
+        glass.state = .active
+        glass.wantsLayer = true
+        glass.layer?.cornerRadius = 18
+        glass.layer?.masksToBounds = true
+        host.frame = glass.bounds
+        host.autoresizingMask = [.width, .height]
+        glass.addSubview(host)
+
+        // Keyboard focus comes from bringToFront(), which activates Simple Block; being key alone isn't enough on macOS 14+.
+        let panel = PromptPanel(contentRect: glass.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.contentView = glass
+        panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = .modalPanel
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.appearance = NSAppearance(named: .darkAqua)
+        panel.isMovableByWindowBackground = true
+        if let screen = NSScreen.main?.visibleFrame {
+            panel.setFrameOrigin(NSPoint(x: screen.midX - size.width / 2, y: screen.maxY - screen.height * 0.22 - size.height))
+        }
+
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak panel] event in
+            guard event.window === panel else { return event }
+            if event.keyCode == 53 {
+                onCancel()
+                return nil
+            }
+            if [36, 76].contains(event.keyCode), event.modifierFlags.contains(.command) {
+                if wordCount(text.value) >= minimumWords { onSubmit(text.value) }
+                return nil
+            }
+            return event
+        }
+        self.panel = panel
+        bundleId = app.bundleId
+        bringToFront()
+    }
+
+    /// Builds the backdrop windows ahead of time (again if the screens changed), so cover() is only an order-front.
+    func prepare() {
+        guard shields.map(\.frame) != NSScreen.screens.map(\.frame) else { return }
+        for shield in shields { shield.close() }
+        shields = NSScreen.screens.map(Self.shield)
+        for shield in shields { shield.displayIfNeeded() }
+    }
+
+    /// Puts the backdrop up on every screen. Instant, so gating calls it before anything slower.
+    func cover() {
+        prepare()
+        for shield in shields { shield.orderFrontRegardless() }
+        // Push it to the screen now, not when this run loop pass ends after the slower prompt build.
+        CATransaction.flush()
+    }
+
+    func bringToFront() {
+        cover()
+        panel?.orderFrontRegardless()
+        // A key panel alone doesn't get keystrokes while another app is active, and plain activate() gets refused.
+        NSApp.activate(ignoringOtherApps: true)
+        panel?.makeKey()
+    }
+
+    func close() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+        panel?.close()
+        panel = nil
+        for shield in shields { shield.orderOut(nil) }
+        bundleId = nil
+    }
+
+    /// Blurred, dimmed backdrop for one screen, above normal windows and below the prompt.
+    /// The blur keeps a gated app that briefly unhides itself unreadable. Swallows clicks without activating anything.
+    private static func shield(for screen: NSScreen) -> NSPanel {
+        let shield = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        shield.setFrame(screen.frame, display: false)
+        let blur = NSVisualEffectView()
+        blur.material = .fullScreenUI
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.appearance = NSAppearance(named: .darkAqua)
+        shield.contentView = blur
+        let dim = NSView(frame: blur.bounds)
+        dim.wantsLayer = true
+        dim.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.35).cgColor
+        dim.autoresizingMask = [.width, .height]
+        blur.addSubview(dim)
+        shield.isOpaque = false
+        shield.backgroundColor = .clear
+        shield.level = .floating
+        shield.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        shield.isReleasedWhenClosed = false
+        shield.hidesOnDeactivate = false
+        return shield
+    }
+}
+
+private struct PromptView: View {
+    let app: GatedApp
+    let trigger: Trigger
+    let nthToday: Int
+    let minutes: Int
+    @ObservedObject var text: PromptText
+    let onSubmit: () -> Void
+    let onCancel: () -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        let words = wordCount(text.value)
+        let enough = words >= minimumWords
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                AppIcon(app: app, size: 52)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(trigger.question(app.name)).font(.system(size: 17, weight: .semibold))
+                    Text(trigger == .expired
+                         ? "Your \(minutes) min ran out, so \(app.name) is hidden."
+                         : "At least \(minimumWords) words. Saved to your history.")
+                        .foregroundStyle(.secondary)
+                    Text("\(ordinal(nthToday)) reason for \(app.name) today")
+                        .font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            TextEditor(text: $text.value)
+                .font(.system(size: 14))
+                .scrollContentBackground(.hidden)
+                .focused($focused)
+                .padding(8)
+                .frame(height: 72)
+                .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10)
+                    .stroke(focused ? Color.accentColor.opacity(0.8) : Color.white.opacity(0.18)))
+            HStack(spacing: 10) {
+                ProgressView(value: Double(min(words, minimumWords)), total: Double(minimumWords))
+                    .frame(width: 90)
+                    .tint(enough ? .green : nil)
+                Text("\(words) / \(minimumWords) words")
+                    .monospacedDigit()
+                    .foregroundStyle(enough ? .green : .secondary)
+                Spacer()
+                Button("Never mind", action: onCancel)
+                Button("Open \(app.name)", action: onSubmit)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!enough)
+            }
+            Text("⌘↵ open · esc never mind")
+                .font(.caption2).foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(22)
+        .frame(width: 480)
+        .onAppear { DispatchQueue.main.async { focused = true } }
+    }
+}
+
+/// The app's own icon, or a globe for a site.
+struct AppIcon: View {
+    let app: GatedApp
+    let size: CGFloat
+
+    var body: some View {
+        if app.isSite {
+            Image(systemName: "globe")
+                .resizable()
+                .scaledToFit()
+                .padding(size * 0.12)
+                .foregroundStyle(.secondary)
+                .frame(width: size, height: size)
+        } else {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
+                .resizable()
+                .frame(width: size, height: size)
+        }
+    }
+}
