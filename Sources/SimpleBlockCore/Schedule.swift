@@ -1,9 +1,9 @@
 import Foundation
 
-/// The one global schedule: enabled weekdays plus a From/To time of day.
+/// A scheduled session's days plus a From/To time of day.
 /// From > To wraps past midnight, and the part after midnight belongs to the day it started on.
 /// From == To covers the whole day.
-public struct Schedule: Equatable {
+public struct Schedule: Codable, Equatable {
     /// Calendar weekdays, 1 = Sunday ... 7 = Saturday.
     public var days: Set<Int>
     /// Minutes since midnight.

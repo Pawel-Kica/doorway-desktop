@@ -88,6 +88,87 @@ final class TimerTests: XCTestCase {
         XCTAssertEqual(countdown(192), "3:12")
         XCTAssertEqual(countdown(60), "1:00")
         XCTAssertEqual(countdown(0.4), "0:01")
+        XCTAssertEqual(countdown(3599), "59:59")
+        XCTAssertEqual(countdown(9660), "2:41:00")
+    }
+}
+
+final class SessionTests: XCTestCase {
+    private let signal = GatedApp(bundleId: "org.whispersystems.signal-desktop", name: "Signal", path: "/Applications/Signal.app")
+    private let whatsapp = GatedApp(bundleId: "net.whatsapp.WhatsApp", name: "WhatsApp", path: "/Applications/WhatsApp.app")
+    private let gmail = GatedApp(bundleId: "com.google.Gmail", name: "Gmail", path: "/Applications/Gmail.app")
+
+    private lazy var messengers = Blocklist(name: "Messengers", entries: [signal, whatsapp])
+    private lazy var mail = Blocklist(name: "Mail", entries: [gmail, signal])
+
+    private func gated(_ sessions: [ScheduledSession], _ quick: [QuickSession] = [], at now: Date) -> [String] {
+        gatedNow([messengers, mail], sessions: sessions, quickSessions: quick, now: now, calendar: utc).map(\.bundleId)
+    }
+
+    func testOverlappingSessionsGateTheUnionOnce() {
+        let workday = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(days: [2], from: 8 * 60, to: 19 * 60))
+        let evening = ScheduledSession(blocklists: [mail.id], schedule: Schedule(days: [2], from: 17 * 60, to: 22 * 60))
+        XCTAssertEqual(gated([workday, evening], at: date(9)), [signal.bundleId, whatsapp.bundleId])
+        XCTAssertEqual(gated([workday, evening], at: date(18)), [signal.bundleId, whatsapp.bundleId, gmail.bundleId])
+        XCTAssertEqual(gated([workday, evening], at: date(20)), [gmail.bundleId, signal.bundleId])
+        XCTAssertEqual(gated([workday, evening], at: date(23)), [])
+    }
+
+    func testDisabledSessionGatesNothing() {
+        let off = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(), enabled: false)
+        XCTAssertEqual(gated([off], at: date(12)), [])
+        XCTAssertEqual(activeSessions([off], now: date(12), calendar: utc), [])
+    }
+
+    func testQuickSessionGatesUntilItEnds() {
+        let quick = QuickSession(blocklists: [mail.id], ends: date(15))
+        XCTAssertEqual(gated([], [quick], at: date(12)), [gmail.bundleId, signal.bundleId])
+        XCTAssertEqual(gated([], [quick], at: date(15)), [])
+    }
+
+    func testOvernightSessionGatesAfterMidnight() {
+        let night = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(days: [2], from: 22 * 60, to: 7 * 60))
+        XCTAssertEqual(gated([night], at: date(day: 15, 3)), [signal.bundleId, whatsapp.bundleId])
+        XCTAssertEqual(gated([night], at: date(day: 15, 7)), [])
+    }
+
+    func testEveryEntryIsUniqueByBundleId() {
+        XCTAssertEqual(everyEntry(in: [messengers, mail]).map(\.bundleId), [signal.bundleId, whatsapp.bundleId, gmail.bundleId])
+    }
+
+    func testDeletingBlocklistCleansSessions() {
+        var lists = [messengers, mail]
+        var sessions = [ScheduledSession(blocklists: [messengers.id, mail.id], schedule: Schedule()),
+                        ScheduledSession(blocklists: [mail.id], schedule: Schedule())]
+        var quick = [QuickSession(blocklists: [mail.id], ends: date(15)),
+                     QuickSession(blocklists: [mail.id, messengers.id], ends: date(15))]
+        deleteBlocklist(mail.id, blocklists: &lists, sessions: &sessions, quickSessions: &quick)
+        XCTAssertEqual(lists, [messengers])
+        XCTAssertEqual(sessions.map(\.blocklists), [[messengers.id], []], "an emptied session stays, to pick new lists")
+        XCTAssertEqual(quick.map(\.blocklists), [[messengers.id]], "an emptied quick session ends")
+    }
+
+    func testMigratesOldScheduleIntoOneBlocklistAndSession() {
+        let (lists, sessions) = migratedSettings(gatedApps: [signal, gmail], scheduleDays: [2, 3], from: 8 * 60, to: 19 * 60)
+        XCTAssertEqual(lists.map(\.name), ["Distractions"])
+        XCTAssertEqual(lists[0].entries, [signal, gmail])
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions[0].blocklists, [lists[0].id])
+        XCTAssertEqual(sessions[0].schedule, Schedule(days: [2, 3], from: 8 * 60, to: 19 * 60))
+        XCTAssertTrue(sessions[0].enabled)
+    }
+
+    func testMigrationWithoutOldKeysIsEveryDayAllDay() {
+        let (lists, sessions) = migratedSettings(gatedApps: [], scheduleDays: nil, from: 0, to: 0)
+        XCTAssertEqual(lists[0].entries, [])
+        XCTAssertEqual(sessions[0].schedule, Schedule())
+    }
+
+    func testSettingsRoundTripAsJSON() throws {
+        let session = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(days: [2, 6], from: 480, to: 1140))
+        let data = try JSONEncoder().encode([session])
+        XCTAssertEqual(try JSONDecoder().decode([ScheduledSession].self, from: data), [session])
+        XCTAssertEqual(try JSONDecoder().decode([Blocklist].self, from: JSONEncoder().encode([messengers])), [messengers])
     }
 }
 
@@ -157,63 +238,17 @@ final class LogTests: XCTestCase {
     }
 }
 
-final class SiteTests: XCTestCase {
-    func testSiteHostFromTypedInput() {
-        XCTAssertEqual(siteHost("https://mail.google.com/mail/u/0/#inbox"), "mail.google.com")
-        XCTAssertEqual(siteHost("  Mail.Google.com "), "mail.google.com")
-        XCTAssertEqual(siteHost("www.youtube.com/feed"), "youtube.com")
-        XCTAssertEqual(siteHost("http://localhost:8080/x"), "localhost")
-        XCTAssertNil(siteHost(""))
-        XCTAssertNil(siteHost("gmail"))
-    }
-
+final class GatedAppTests: XCTestCase {
     private let signal = GatedApp(bundleId: "org.whispersystems.signal-desktop", name: "Signal", path: "/Applications/Signal.app")
 
-    func testIsSite() {
-        XCTAssertFalse(signal.isSite)
-        XCTAssertTrue(GatedApp(bundleId: "mail.google.com", name: "Gmail", path: "https://mail.google.com").isSite)
-    }
-
-    func testWebAppMatchesSiteAndSubdomainsMostSpecificFirst() {
-        let gmail = GatedApp(bundleId: "mail.google.com", name: "Gmail", path: "https://mail.google.com")
-        let google = GatedApp(bundleId: "google.com", name: "Google", path: "https://google.com")
-        XCTAssertEqual(gatedSite(forWebAppURL: "https://mail.google.com/mail/u/0/", in: [signal, gmail]), gmail)
-        XCTAssertNil(gatedSite(forWebAppURL: "https://docs.google.com/", in: [gmail]))
-        XCTAssertNil(gatedSite(forWebAppURL: "https://notmail.google.com/", in: [gmail]))
-        XCTAssertEqual(gatedSite(forWebAppURL: "https://docs.google.com/", in: [gmail, google]), google)
-        XCTAssertEqual(gatedSite(forWebAppURL: "https://mail.google.com/", in: [google, gmail]), gmail)
-        XCTAssertNil(gatedSite(forWebAppURL: "https://loop-habits-five.vercel.app/", in: [gmail, google]))
-    }
-
-    func testAddSite() {
+    func testRenameTrimsAndIgnoresEmptyOrMissing() {
         var entries = [signal]
-        XCTAssertTrue(entries.addSite(name: " ", url: "mail.google.com/mail"))
-        XCTAssertEqual(entries.last, GatedApp(bundleId: "mail.google.com", name: "mail.google.com", path: "https://mail.google.com/mail"))
-        XCTAssertFalse(entries.addSite(name: "Again", url: "https://mail.google.com"))
-        XCTAssertFalse(entries.addSite(name: "Bad", url: "gmail"))
-        XCTAssertEqual(entries.count, 2)
-    }
-
-    func testEditRenamesAndChangesSiteURL() {
-        var entries = [signal, GatedApp(bundleId: "mail.google.com", name: "Gmail", path: "https://mail.google.com")]
-        XCTAssertTrue(entries.edit(id: signal.id, name: " Sig ", url: "https://ignored.com"))
+        entries.rename(id: signal.id, to: " Sig ")
         XCTAssertEqual(entries[0], GatedApp(bundleId: signal.bundleId, name: "Sig", path: signal.path))
-        XCTAssertTrue(entries.edit(id: "mail.google.com", name: "", url: "youtube.com/feed"))
-        XCTAssertEqual(entries[1], GatedApp(bundleId: "youtube.com", name: "Gmail", path: "https://youtube.com/feed"))
-        XCTAssertTrue(entries.edit(id: "youtube.com", name: "YouTube", url: "https://youtube.com"), "same host is fine")
-        XCTAssertEqual(entries[1].name, "YouTube")
-    }
-
-    func testEditRejectsBadOrTakenURL() {
-        var entries = [
-            GatedApp(bundleId: "mail.google.com", name: "Gmail", path: "https://mail.google.com"),
-            GatedApp(bundleId: "youtube.com", name: "YouTube", path: "https://youtube.com"),
-        ]
-        let before = entries
-        XCTAssertFalse(entries.edit(id: "youtube.com", name: "X", url: "mail.google.com"))
-        XCTAssertFalse(entries.edit(id: "youtube.com", name: "X", url: "nope"))
-        XCTAssertFalse(entries.edit(id: "gone.com", name: "X"))
-        XCTAssertEqual(entries, before)
+        entries.rename(id: signal.id, to: "  ")
+        XCTAssertEqual(entries[0].name, "Sig")
+        entries.rename(id: "gone", to: "X")
+        XCTAssertEqual(entries.count, 1)
     }
 }
 

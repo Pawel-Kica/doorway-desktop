@@ -36,7 +36,7 @@ final class PromptController {
         glass.blendingMode = .behindWindow
         glass.state = .active
         glass.wantsLayer = true
-        glass.layer?.cornerRadius = 18
+        glass.layer?.cornerRadius = 22
         glass.layer?.masksToBounds = true
         host.frame = glass.bounds
         host.autoresizingMask = [.width, .height]
@@ -54,8 +54,8 @@ final class PromptController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.appearance = NSAppearance(named: .darkAqua)
         panel.isMovableByWindowBackground = true
-        if let screen = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(x: screen.midX - size.width / 2, y: screen.maxY - screen.height * 0.22 - size.height))
+        if let area = NSScreen.main?.visibleFrame {
+            panel.setFrameOrigin(NSPoint(x: area.midX - size.width / 2, y: area.maxY - area.height * 0.22 - size.height))
         }
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak panel] event in
@@ -79,7 +79,7 @@ final class PromptController {
     func prepare() {
         guard shields.map(\.frame) != NSScreen.screens.map(\.frame) else { return }
         for shield in shields { shield.close() }
-        shields = NSScreen.screens.map(Self.shield)
+        shields = NSScreen.screens.map { Self.shield(frame: $0.frame) }
         for shield in shields { shield.displayIfNeeded() }
     }
 
@@ -110,9 +110,9 @@ final class PromptController {
 
     /// Blurred, dimmed backdrop for one screen, above normal windows and below the prompt.
     /// The blur keeps a gated app that briefly unhides itself unreadable. Swallows clicks without activating anything.
-    private static func shield(for screen: NSScreen) -> NSPanel {
-        let shield = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        shield.setFrame(screen.frame, display: false)
+    private static func shield(frame: NSRect) -> NSPanel {
+        let shield = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        shield.setFrame(frame, display: false)
         let blur = NSVisualEffectView()
         blur.material = .fullScreenUI
         blur.blendingMode = .behindWindow
@@ -147,31 +147,31 @@ private struct PromptView: View {
     var body: some View {
         let words = wordCount(text.value)
         let enough = words >= minimumWords
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 14) {
-                AppIcon(app: app, size: 52)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(trigger.question(app.name)).font(.system(size: 17, weight: .semibold))
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 16) {
+                AppIcon(app: app, size: 60)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(trigger.question(app.name)).font(.system(size: 20, weight: .semibold))
                     Text(trigger == .expired
                          ? "Your \(minutes) min ran out, so \(app.name) is hidden."
                          : "At least \(minimumWords) words. Saved to your history.")
                         .foregroundStyle(.secondary)
                     Text("\(ordinal(nthToday)) reason for \(app.name) today")
-                        .font(.caption).foregroundStyle(.tertiary)
+                        .font(.system(size: 13)).foregroundStyle(.tertiary)
                 }
             }
             TextEditor(text: $text.value)
-                .font(.system(size: 14))
+                .font(.system(size: 16))
                 .scrollContentBackground(.hidden)
                 .focused($focused)
-                .padding(8)
-                .frame(height: 72)
-                .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10)
+                .padding(10)
+                .frame(height: 96)
+                .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12)
                     .stroke(focused ? Color.accentColor.opacity(0.8) : Color.white.opacity(0.18)))
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 ProgressView(value: Double(min(words, minimumWords)), total: Double(minimumWords))
-                    .frame(width: 90)
+                    .frame(width: 100)
                     .tint(enough ? .green : nil)
                 Text("\(words) / \(minimumWords) words")
                     .monospacedDigit()
@@ -183,32 +183,25 @@ private struct PromptView: View {
                     .disabled(!enough)
             }
             Text("⌘↵ open · esc never mind")
-                .font(.caption2).foregroundStyle(.tertiary)
+                .font(.system(size: 12)).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(22)
-        .frame(width: 480)
+        .font(.system(size: 15))
+        .controlSize(.large)
+        .padding(28)
+        .frame(width: 560)
         .onAppear { DispatchQueue.main.async { focused = true } }
     }
 }
 
-/// The app's own icon, or a globe for a site.
+/// The app's own icon.
 struct AppIcon: View {
     let app: GatedApp
     let size: CGFloat
 
     var body: some View {
-        if app.isSite {
-            Image(systemName: "globe")
-                .resizable()
-                .scaledToFit()
-                .padding(size * 0.12)
-                .foregroundStyle(.secondary)
-                .frame(width: size, height: size)
-        } else {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
-                .resizable()
-                .frame(width: size, height: size)
-        }
+        Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
+            .resizable()
+            .frame(width: size, height: size)
     }
 }

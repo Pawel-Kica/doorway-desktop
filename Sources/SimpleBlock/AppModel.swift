@@ -25,19 +25,20 @@ enum Trigger {
 }
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general = "General", apps = "Apps", history = "History"
+    case sessions = "Sessions", blocklists = "Blocklists", general = "General", history = "History"
     var id: Self { self }
     var symbol: String {
         switch self {
+        case .sessions: "calendar"
+        case .blocklists: "list.bullet.rectangle"
         case .general: "gearshape"
-        case .apps: "square.grid.2x2"
         case .history: "clock"
         }
     }
 }
 
 /// App state plus the gating logic: watches NSWorkspace, hides gated apps, runs the prompt and the timers.
-/// A site is gated through its Chrome web app, which is its own process, so it goes through the same path as an app.
+/// What's gated comes from sessions: scheduled ones and quick ones started from the menu bar, each pointing at blocklists.
 /// Settings live in UserDefaults, the log in reasons.jsonl.
 @MainActor
 final class AppModel: ObservableObject {
@@ -46,17 +47,16 @@ final class AppModel: ObservableObject {
     @Published var minutesPerReason: Int {
         didSet { UserDefaults.standard.set(minutesPerReason, forKey: "minutesPerReason") }
     }
-    @Published var schedule: Schedule {
-        didSet {
-            UserDefaults.standard.set(schedule.days.sorted(), forKey: "scheduleDays")
-            UserDefaults.standard.set(schedule.from, forKey: "scheduleFrom")
-            UserDefaults.standard.set(schedule.to, forKey: "scheduleTo")
-        }
+    @Published var blocklists: [Blocklist] {
+        didSet { save(blocklists, "blocklists") }
     }
-    @Published var gatedApps: [GatedApp] {
-        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(gatedApps), forKey: "gatedApps") }
+    @Published var sessions: [ScheduledSession] {
+        didSet { save(sessions, "sessions") }
     }
-    @Published var settingsTab = SettingsTab.general
+    @Published var quickSessions: [QuickSession] {
+        didSet { save(quickSessions, "quickSessions") }
+    }
+    @Published var settingsTab = SettingsTab.sessions
     @Published private(set) var entries: [LogEntry]
     @Published private(set) var timers = AppTimers()
     @Published private(set) var now = Date()
@@ -67,16 +67,69 @@ final class AppModel: ObservableObject {
     private init() {
         let defaults = UserDefaults.standard
         minutesPerReason = defaults.object(forKey: "minutesPerReason") as? Int ?? 5
-        schedule = Schedule(
-            days: Set(defaults.array(forKey: "scheduleDays") as? [Int] ?? Array(1...7)),
-            from: defaults.integer(forKey: "scheduleFrom"),
-            to: defaults.integer(forKey: "scheduleTo"))
-        if let data = defaults.data(forKey: "gatedApps"), let apps = try? JSONDecoder().decode([GatedApp].self, from: data) {
-            gatedApps = apps
-        } else {
-            gatedApps = Self.signalIfInstalled()
-        }
         entries = log.readAll()
+        if var lists: [Blocklist] = Self.load("blocklists") {
+            // Sites (Chrome tabs and web apps) were dropped; their entries had a URL as the path.
+            for i in lists.indices { lists[i].entries.removeAll { $0.path.contains("://") } }
+            blocklists = lists
+            sessions = Self.load("sessions") ?? []
+            quickSessions = Self.load("quickSessions") ?? []
+        } else {
+            // Before blocklists: one schedule over gatedApps. The old keys stay, they're just not read again.
+            (blocklists, sessions) = migratedSettings(
+                gatedApps: Self.load("gatedApps") ?? Self.signalIfInstalled(),
+                scheduleDays: defaults.array(forKey: "scheduleDays") as? [Int],
+                from: defaults.integer(forKey: "scheduleFrom"),
+                to: defaults.integer(forKey: "scheduleTo"))
+            quickSessions = []
+            save(blocklists, "blocklists")
+            save(sessions, "sessions")
+        }
+    }
+
+    private static func load<T: Decodable>(_ key: String) -> T? {
+        UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
+    }
+
+    /// Writes a setting as JSON data.
+    private func save<T: Encodable>(_ value: T, _ key: String) {
+        UserDefaults.standard.set(try? JSONEncoder().encode(value), forKey: key)
+    }
+
+    /// Entries of every blocklist, for matching running apps to an entry.
+    var everyEntry: [GatedApp] { SimpleBlockCore.everyEntry(in: blocklists) }
+
+    /// Entries the running sessions gate at `now`.
+    func gated(at now: Date) -> [GatedApp] {
+        gatedNow(blocklists, sessions: sessions, quickSessions: quickSessions, now: now)
+    }
+
+    private func isGated(_ entry: GatedApp, now: Date) -> Bool {
+        gated(at: now).contains { $0.bundleId == entry.bundleId }
+    }
+
+    /// Starts a quick session from the menu bar.
+    func startQuickSession(_ lists: Set<UUID>, minutes: Int) {
+        quickSessions.append(QuickSession(blocklists: lists, ends: Date().addingTimeInterval(TimeInterval(minutes * 60))))
+    }
+
+    func endQuickSession(_ id: UUID) {
+        quickSessions.removeAll { $0.id == id }
+    }
+
+    /// Blocklist names for a session, in Settings order.
+    func names(_ lists: Set<UUID>) -> String {
+        let names = blocklists.filter { lists.contains($0.id) }.map(\.name)
+        return names.isEmpty ? "No blocklist" : names.joined(separator: ", ")
+    }
+
+    func deleteBlocklist(_ id: UUID) {
+        // Copies, so each didSet reads the other settings without an overlapping access.
+        var lists = blocklists, scheduled = sessions, quick = quickSessions
+        SimpleBlockCore.deleteBlocklist(id, blocklists: &lists, sessions: &scheduled, quickSessions: &quick)
+        sessions = scheduled
+        quickSessions = quick
+        blocklists = lists
     }
 
     /// Called once at launch.
@@ -100,30 +153,21 @@ final class AppModel: ObservableObject {
         gate(NSWorkspace.shared.frontmostApplication)
     }
 
-    /// The gated entry a running app belongs to: an app by bundle ID, or a site by its web app's start URL.
-    private func entry(for app: NSRunningApplication) -> GatedApp? {
-        if let gated = gatedApps.first(where: { !$0.isSite && $0.bundleId == app.bundleIdentifier }) { return gated }
-        guard let url = app.bundleURL.flatMap(Bundle.init(url:))?.object(forInfoDictionaryKey: webAppURLKey) as? String else { return nil }
-        return gatedSite(forWebAppURL: url, in: gatedApps)
-    }
-
-    /// Running processes of a gated entry. A site can have several web apps, e.g. two Gmail accounts.
     private func running(_ gated: GatedApp) -> [NSRunningApplication] {
-        if !gated.isSite { return NSRunningApplication.runningApplications(withBundleIdentifier: gated.bundleId) }
-        return NSWorkspace.shared.runningApplications.filter { entry(for: $0) == gated }
+        NSRunningApplication.runningApplications(withBundleIdentifier: gated.bundleId)
     }
 
-    /// Hides a gated app and asks for a reason, unless it's off-schedule or its timer is running.
+    /// Hides a gated app and asks for a reason, unless no session gates it now or its timer is running.
     private func gate(_ app: NSRunningApplication?, expired: Bool = false) {
         guard let app else { return }
-        let gated = entry(for: app)
+        let gated = everyEntry.first { $0.bundleId == app.bundleIdentifier }
         // Hiding the gated app hands activation to another app, which takes the keyboard from the prompt. Take it back.
         if prompt.isShowing, gated?.id != prompt.bundleId, app != NSRunningApplication.current {
             prompt.bringToFront()
         }
         guard let gated else { return }
         let now = Date()
-        guard schedule.isActive(at: now), !timers.isRunning(gated.bundleId, now: now) else { return }
+        guard isGated(gated, now: now), !timers.isRunning(gated.bundleId, now: now) else { return }
         // Backdrop first, it's instant. hide() waits on the other app and building the prompt takes a moment.
         prompt.cover()
         app.hide()
@@ -147,19 +191,20 @@ final class AppModel: ObservableObject {
 
     private func tick() {
         now = Date()
+        if quickSessions.contains(where: { $0.ends <= now }) { quickSessions.removeAll { $0.ends <= now } }
         // Time up: ask again if the app is in front, otherwise quit it (a locked app doesn't stay running).
         for id in timers.popExpired(now: now) {
-            guard let gated = gatedApps.first(where: { $0.id == id }) else { continue }
+            guard let gated = everyEntry.first(where: { $0.id == id }) else { continue }
             for app in running(gated) {
                 if app.isActive {
                     gate(app, expired: true)
-                } else if schedule.isActive(at: now) {
+                } else if isGated(gated, now: now) {
                     app.terminate()
                 }
             }
         }
         // While the prompt is up its app stays hidden, whatever tries to bring it back.
-        if let gated = gatedApps.first(where: { $0.id == prompt.bundleId }) {
+        if let gated = everyEntry.first(where: { $0.id == prompt.bundleId }) {
             for app in running(gated) where !app.isHidden { app.hide() }
         }
     }
@@ -173,8 +218,7 @@ final class AppModel: ObservableObject {
         // Simple Block itself isn't active, so it can't hand activation over. Launch Services can.
         let process = running(app).first
         process?.unhide()
-        guard let url = process?.bundleURL ?? (app.isSite ? nil : URL(fileURLWithPath: app.path)) else { return }
-        NSWorkspace.shared.openApplication(at: url, configuration: .init())
+        NSWorkspace.shared.openApplication(at: process?.bundleURL ?? URL(fileURLWithPath: app.path), configuration: .init())
     }
 
     private func cancel(_ app: GatedApp) {
@@ -198,38 +242,17 @@ final class AppModel: ObservableObject {
         entries.append(entry)
     }
 
-    func addApps() {
+    /// Adds apps picked in /Applications to a blocklist.
+    func addApps(to list: UUID) {
         let panel = NSOpenPanel()
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.allowedContentTypes = [.application]
         panel.allowsMultipleSelection = true
         NSApp.activate()
-        guard panel.runModal() == .OK else { return }
+        guard panel.runModal() == .OK, let index = blocklists.firstIndex(where: { $0.id == list }) else { return }
         for url in panel.urls {
-            guard let id = Bundle(url: url)?.bundleIdentifier, !gatedApps.contains(where: { $0.bundleId == id }) else { continue }
-            gatedApps.append(GatedApp(bundleId: id, name: url.deletingPathExtension().lastPathComponent, path: url.path))
-        }
-    }
-
-    /// Installed web apps for a site, found where Chrome puts them: ~/Applications/Chrome Apps.localized.
-    /// Other Chromium browsers use a sibling "<Browser> Apps.localized" folder, so every folder in ~/Applications is checked.
-    func webApps(for site: GatedApp) -> [URL] {
-        let fm = FileManager.default
-        let home = fm.urls(for: .applicationDirectory, in: .userDomainMask)[0]
-        let folders = [home] + ((try? fm.contentsOfDirectory(at: home, includingPropertiesForKeys: nil)) ?? []).filter { $0.pathExtension == "localized" }
-        return folders.flatMap { (try? fm.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? [] }.filter {
-            guard $0.pathExtension == "app", let url = Bundle(url: $0)?.object(forInfoDictionaryKey: webAppURLKey) as? String else { return false }
-            return gatedSite(forWebAppURL: url, in: gatedApps) == site
-        }
-    }
-
-    /// Opens a site in Chrome, where Paweł installs it as an app. Falls back to the default browser.
-    func openInChrome(_ site: GatedApp) {
-        guard let url = URL(string: site.path) else { return }
-        if let chrome = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") {
-            NSWorkspace.shared.open([url], withApplicationAt: chrome, configuration: NSWorkspace.OpenConfiguration())
-        } else {
-            NSWorkspace.shared.open(url)
+            guard let id = Bundle(url: url)?.bundleIdentifier, !blocklists[index].entries.contains(where: { $0.bundleId == id }) else { continue }
+            blocklists[index].entries.append(GatedApp(bundleId: id, name: url.deletingPathExtension().lastPathComponent, path: url.path))
         }
     }
 

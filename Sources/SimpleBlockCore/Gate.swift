@@ -40,9 +40,10 @@ public struct AppTimers {
     }
 }
 
-/// "3:12" style countdown. Rounds up so it never shows 0:00 while time is left.
+/// "3:12" style countdown, "2:41:00" from an hour up. Rounds up so it never shows 0:00 while time is left.
 public func countdown(_ seconds: TimeInterval) -> String {
     let s = Int(seconds.rounded(.up))
+    if s >= 3600 { return "\(s / 3600):" + String(format: "%02d:%02d", s / 60 % 60, s % 60) }
     return "\(s / 60):" + String(format: "%02d", s % 60)
 }
 
