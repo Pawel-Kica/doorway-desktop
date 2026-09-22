@@ -108,6 +108,34 @@ final class AppModel: ObservableObject {
         gated(at: now).contains { $0.bundleId == entry.bundleId }
     }
 
+    /// Entries super-locked at `now`: they never open, no prompt.
+    func superLocked(at now: Date) -> [GatedApp] {
+        superLockedNow(blocklists, sessions: sessions, now: now)
+    }
+
+    private func isSuperLocked(_ entry: GatedApp, now: Date) -> Bool {
+        superLocked(at: now).contains { $0.bundleId == entry.bundleId }
+    }
+
+    /// "Locked until 10:00" for a super-locked app, "Locked all day, every day" when it never ends.
+    func lockedUntil(_ bundleId: String, now: Date) -> String {
+        guard let end = superLockEnd(bundleId, blocklists: blocklists, sessions: sessions, now: now) else {
+            return "Locked all day, every day"
+        }
+        let time = end.formatted(date: .omitted, time: .shortened)
+        return end.timeIntervalSince(now) < 24 * 3600 ? "Locked until \(time)" : "Locked until \(end.formatted(.dateTime.weekday(.wide))) \(time)"
+    }
+
+    /// A super-locked session that's on now can't be changed or deleted.
+    func isFrozen(_ session: ScheduledSession) -> Bool {
+        superLockedSessions(sessions, now: now).contains { $0.id == session.id }
+    }
+
+    /// A blocklist a frozen session uses can't lose entries or be deleted.
+    func isFrozen(list: UUID) -> Bool {
+        frozenBlocklists(sessions, now: now).contains(list)
+    }
+
     /// Starts a quick session from the menu bar.
     func startQuickSession(_ lists: Set<UUID>, minutes: Int) {
         quickSessions.append(QuickSession(blocklists: lists, ends: Date().addingTimeInterval(TimeInterval(minutes * 60))))
@@ -167,6 +195,7 @@ final class AppModel: ObservableObject {
         }
         guard let gated else { return }
         let now = Date()
+        if isSuperLocked(gated, now: now) { return lock(app, gated, now: now) }
         guard isGated(gated, now: now), !timers.isRunning(gated.bundleId, now: now) else { return }
         // Backdrop first, it's instant. hide() waits on the other app and building the prompt takes a moment.
         prompt.cover()
@@ -177,6 +206,24 @@ final class AppModel: ObservableObject {
             // Activation often arrives before the launch notification, so a fresh process counts as a launch.
             let launched = app.launchDate.map { now.timeIntervalSince($0) < 10 } ?? false
             ask(gated, trigger: expired ? .expired : launched ? .launch : .switch, now: now)
+        }
+    }
+
+    /// Super lock: hide and quit the app, show the locked notice once per attempt, log `locked`.
+    /// Launch, activate and unhide all fire for one attempt, so a notice already up for this app just stays.
+    private func lock(_ app: NSRunningApplication, _ gated: GatedApp, now: Date) {
+        prompt.cover()
+        app.hide()
+        app.terminate()
+        timers.stop(gated.bundleId)
+        if prompt.isShowing {
+            prompt.bringToFront()
+            return
+        }
+        record(LogEntry(ts: now, bundleId: gated.bundleId, app: gated.name, kind: .locked))
+        prompt.showLocked(app: gated, until: lockedUntil(gated.bundleId, now: now)) { [weak self] in
+            self?.prompt.close()
+            NSApp.hide(nil)
         }
     }
 
@@ -192,6 +239,11 @@ final class AppModel: ObservableObject {
     private func tick() {
         now = Date()
         if quickSessions.contains(where: { $0.ends <= now }) { quickSessions.removeAll { $0.ends <= now } }
+        // A super lock starting quits its apps right away, timer or not.
+        for locked in superLocked(at: now) {
+            for app in running(locked) { app.terminate() }
+            if timers.isRunning(locked.bundleId, now: now) { timers.stop(locked.bundleId) }
+        }
         // Time up: ask again if the app is in front, otherwise quit it (a locked app doesn't stay running).
         for id in timers.popExpired(now: now) {
             guard let gated = everyEntry.first(where: { $0.id == id }) else { continue }

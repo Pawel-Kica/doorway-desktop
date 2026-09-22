@@ -43,6 +43,19 @@ final class ScheduleTests: XCTestCase {
         XCTAssertFalse(schedule.isActive(at: date(12), calendar: utc))
     }
 
+    func testEndOfWindow() {
+        let day = Schedule(days: [2], from: 8 * 60, to: 19 * 60)
+        XCTAssertEqual(day.end(of: date(9), calendar: utc), date(19))
+        XCTAssertNil(day.end(of: date(20), calendar: utc))
+        // 18:00-10:00: before midnight it ends tomorrow, after midnight today.
+        let night = Schedule(days: [2], from: 18 * 60, to: 10 * 60)
+        XCTAssertEqual(night.end(of: date(20), calendar: utc), date(day: 15, 10))
+        XCTAssertEqual(night.end(of: date(day: 15, 3), calendar: utc), date(day: 15, 10))
+        // All day Mon+Tue merges into one window ending Wednesday 00:00. Every day all day never ends.
+        XCTAssertEqual(Schedule(days: [2, 3]).end(of: date(12), calendar: utc), date(day: 16, 0))
+        XCTAssertNil(Schedule().end(of: date(12), calendar: utc))
+    }
+
     func testOvernightFromSaturdayIntoSunday() {
         let schedule = Schedule(days: [7], from: 22 * 60, to: 7 * 60)
         XCTAssertTrue(schedule.isActive(at: date(day: 20, 3), calendar: utc))
@@ -63,6 +76,13 @@ final class TimerTests: XCTestCase {
         var timers = AppTimers()
         timers.start("signal", minutes: 5, now: date(12))
         XCTAssertFalse(timers.isRunning("slack", now: date(12)))
+    }
+
+    func testStopEndsATimerEarly() {
+        var timers = AppTimers()
+        timers.start("a", minutes: 5, now: date(9))
+        timers.stop("a")
+        XCTAssertFalse(timers.isRunning("a", now: date(9)))
     }
 
     func testPopExpiredRemovesOnlyEndedTimers() {
@@ -132,6 +152,39 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(gated([night], at: date(day: 15, 7)), [])
     }
 
+    func testSuperLockIsASubsetOfGatedAndHasAnEnd() {
+        let night = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(days: [2], from: 18 * 60, to: 10 * 60), superLock: true)
+        let evening = ScheduledSession(blocklists: [mail.id], schedule: Schedule(days: [2], from: 17 * 60, to: 22 * 60))
+        let locked = superLockedNow([messengers, mail], sessions: [night, evening], now: date(20), calendar: utc).map(\.bundleId)
+        XCTAssertEqual(locked, [signal.bundleId, whatsapp.bundleId])
+        XCTAssertEqual(gated([night, evening], at: date(20)), [signal.bundleId, whatsapp.bundleId, gmail.bundleId])
+        XCTAssertEqual(superLockedNow([messengers, mail], sessions: [night, evening], now: date(12), calendar: utc), [])
+        XCTAssertEqual(frozenBlocklists([night, evening], now: date(20), calendar: utc), [messengers.id])
+        XCTAssertEqual(superLockEnd(signal.bundleId, blocklists: [messengers, mail], sessions: [night], now: date(20), calendar: utc),
+                       date(day: 15, 10))
+        // Two locks on the same app: the later end wins, and a never-ending one wins over both.
+        let late = ScheduledSession(blocklists: [mail.id], schedule: Schedule(days: [2], from: 18 * 60, to: 12 * 60), superLock: true)
+        XCTAssertEqual(superLockEnd(signal.bundleId, blocklists: [messengers, mail], sessions: [night, late], now: date(20), calendar: utc),
+                       date(day: 15, 12))
+        let always = ScheduledSession(blocklists: [mail.id], schedule: Schedule(), superLock: true)
+        XCTAssertNil(superLockEnd(signal.bundleId, blocklists: [messengers, mail], sessions: [night, always], now: date(20), calendar: utc))
+    }
+
+    func testDisabledOrOffSuperLockIsNotFrozen() {
+        let off = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(), enabled: false, superLock: true)
+        XCTAssertEqual(superLockedSessions([off], now: date(12), calendar: utc), [])
+        XCTAssertEqual(frozenBlocklists([off], now: date(12), calendar: utc), [])
+    }
+
+    func testSessionsSavedBeforeSuperLockDecode() throws {
+        let old = """
+        [{"enabled":true,"id":"72F51428-5762-416F-9AAE-4B79C94EAF97","blocklists":[],"schedule":{"to":0,"from":0,"days":[1]}}]
+        """
+        let sessions = try JSONDecoder().decode([ScheduledSession].self, from: Data(old.utf8))
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertFalse(sessions[0].superLock)
+    }
+
     func testEveryEntryIsUniqueByBundleId() {
         XCTAssertEqual(everyEntry(in: [messengers, mail]).map(\.bundleId), [signal.bundleId, whatsapp.bundleId, gmail.bundleId])
     }
@@ -165,7 +218,7 @@ final class SessionTests: XCTestCase {
     }
 
     func testSettingsRoundTripAsJSON() throws {
-        let session = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(days: [2, 6], from: 480, to: 1140))
+        let session = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(days: [2, 6], from: 480, to: 1140), superLock: true)
         let data = try JSONEncoder().encode([session])
         XCTAssertEqual(try JSONDecoder().decode([ScheduledSession].self, from: data), [session])
         XCTAssertEqual(try JSONDecoder().decode([Blocklist].self, from: JSONEncoder().encode([messengers])), [messengers])

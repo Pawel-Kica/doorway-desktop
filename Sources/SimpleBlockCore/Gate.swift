@@ -26,6 +26,11 @@ public struct AppTimers {
         remaining(bundleId, now: now) > 0
     }
 
+    /// Ends a timer early, e.g. when a super lock starts.
+    public mutating func stop(_ bundleId: String) {
+        ends[bundleId] = nil
+    }
+
     /// Removes the timers that ended at or before `now` and returns their bundle IDs.
     public mutating func popExpired(now: Date) -> [String] {
         let done = ends.filter { $0.value <= now }.map(\.key)

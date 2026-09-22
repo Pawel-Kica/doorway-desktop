@@ -1,7 +1,8 @@
 import Foundation
 
 public enum LogKind: String, Codable {
-    case launch, `switch`, expired, cancelled, quit
+    /// `locked`: a super-locked app tried to open and was quit.
+    case launch, `switch`, expired, cancelled, locked, quit
 
     /// Kinds that carry a typed reason.
     public var hasReason: Bool { self == .launch || self == .switch || self == .expired }

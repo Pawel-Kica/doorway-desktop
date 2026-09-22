@@ -84,15 +84,23 @@ private struct SessionsPane: View {
     var body: some View {
         Form {
             ForEach($model.sessions) { $session in
+                // A super-locked session that's on now is frozen: nothing about it can change until it ends.
+                let frozen = model.isFrozen(session)
                 Section {
                     SessionRows(model: model, session: $session)
                 } header: {
                     SectionTitle(title: model.names(session.blocklists)) {
+                        if frozen {
+                            Label("Frozen while super locked", systemImage: "lock.fill")
+                                .font(.note).foregroundStyle(.red).padding(.trailing, 10)
+                        }
                         Toggle("Enabled", isOn: $session.enabled).toggleStyle(.switch).labelsHidden()
                             .padding(.trailing, 6)
                         IconButton(symbol: "trash", help: "Delete session") { model.sessions.removeAll { $0.id == session.id } }
                     }
+                    .disabled(frozen)
                 }
+                .disabled(frozen)
             }
             Section {
                 if model.sessions.isEmpty {
@@ -174,6 +182,13 @@ private struct SessionRows: View {
                 }
             }
         }
+        LabeledContent {
+            Toggle("Super lock", isOn: $session.superLock).toggleStyle(.switch).labelsHidden()
+        } label: {
+            Text("Super lock")
+            Text("Apps never open while it's on, no reason asked. The session can't be changed until it ends.")
+                .font(.note)
+        }
     }
 
     /// Minutes since midnight shown as a time of day.
@@ -230,6 +245,8 @@ private struct BlocklistsPane: View {
     var body: some View {
         Form {
             ForEach($model.blocklists) { $list in
+                // A list a super-locked session uses right now keeps its apps and can't be deleted.
+                let frozen = model.isFrozen(list: list.id)
                 Section {
                     if list.entries.isEmpty {
                         Text("No apps").foregroundStyle(.secondary)
@@ -241,15 +258,21 @@ private struct BlocklistsPane: View {
                             Spacer()
                             IconButton(symbol: "pencil", help: "Rename") { startEditing(app, in: list.id) }
                             IconButton(symbol: "minus.circle", help: "Remove from \(list.name)") { list.entries.removeAll { $0.id == app.id } }
+                                .disabled(frozen)
                         }
                         .padding(.vertical, 2)
                     }
                 } header: {
                     SectionTitle(title: list.name) {
+                        if frozen {
+                            Label("Frozen while super locked", systemImage: "lock.fill")
+                                .font(.note).foregroundStyle(.red).padding(.trailing, 10)
+                        }
                         // Same spacing as the row buttons, so the icons line up in columns.
                         HStack(spacing: 14) {
                             IconButton(symbol: "pencil", help: "Rename blocklist") { startNaming(list) }
                             IconButton(symbol: "trash", help: "Delete blocklist") { model.deleteBlocklist(list.id) }
+                                .disabled(frozen)
                         }
                     }
                 } footer: {
@@ -431,6 +454,7 @@ private struct KindPill: View {
         let color: Color = switch kind {
         case .launch, .switch: .blue
         case .expired: .orange
+        case .locked: .red
         case .cancelled, .quit: .gray
         }
         Text(kind.rawValue)

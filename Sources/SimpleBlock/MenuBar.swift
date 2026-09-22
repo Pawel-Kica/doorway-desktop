@@ -39,14 +39,19 @@ struct PopoverView: View {
             if gated.isEmpty {
                 Text("Nothing gated now").foregroundStyle(.secondary).padding(10)
             }
-            // A running timer shows its countdown, everything else a lock: it asks for a reason.
+            // A running timer shows its countdown, a super lock says when it ends, everything else a lock: it asks for a reason.
+            let superLocked = model.superLocked(at: model.now).map(\.bundleId)
             ForEach(gated) { app in
                 let left = model.timers.remaining(app.bundleId, now: model.now)
                 HStack(spacing: 12) {
                     AppIcon(app: app, size: 30)
                     Text(app.name)
                     Spacer()
-                    if left > 0 {
+                    if superLocked.contains(app.bundleId) {
+                        Text(model.lockedUntil(app.bundleId, now: model.now))
+                            .font(.system(size: 13)).foregroundStyle(.red)
+                        Image(systemName: "lock.fill").font(.system(size: 13)).foregroundStyle(.red)
+                    } else if left > 0 {
                         Text("\(countdown(left)) left").monospacedDigit()
                     } else {
                         Image(systemName: "lock.fill").font(.system(size: 13)).foregroundStyle(.tertiary)
@@ -80,13 +85,13 @@ struct PopoverView: View {
         .frame(width: 360)
     }
 
-    /// What gates now: a scheduled session first (they're the main thing), else the quick session ending last.
+    /// What gates now: a super lock first, then a scheduled session (they're the main thing), else the quick session ending last.
     private func status() -> (text: String, on: Bool) {
-        if let session = activeSessions(model.sessions, now: model.now).first {
-            let schedule = session.schedule
-            guard schedule.from != schedule.to else { return ("Session on all day", true) }
-            let end = Calendar.current.date(bySettingHour: schedule.to / 60, minute: schedule.to % 60, second: 0, of: model.now)!
-            return ("Session on until \(end.formatted(date: .omitted, time: .shortened))", true)
+        let active = activeSessions(model.sessions, now: model.now)
+        if let session = active.first(where: \.superLock) ?? active.first {
+            let kind = session.superLock ? "Super lock" : "Session"
+            guard let end = session.schedule.end(of: model.now) else { return ("\(kind) on all day", true) }
+            return ("\(kind) on until \(end.formatted(date: .omitted, time: .shortened))", true)
         }
         if let quick = model.quickSessions.filter({ $0.ends > model.now }).max(by: { $0.ends < $1.ends }) {
             return ("Quick session, \(countdown(quick.ends.timeIntervalSince(model.now))) left", true)

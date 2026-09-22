@@ -13,7 +13,7 @@ private final class PromptText: ObservableObject {
 
 /// The reason prompt: a glass panel above all windows, over a blurred backdrop on every screen,
 /// so the gated app's window can't be seen even when it briefly unhides itself. One at a time.
-/// ⌘↵ submits once there are enough words, Esc cancels.
+/// ⌘↵ submits once there are enough words, Esc cancels. The same panel shows the super lock notice.
 @MainActor
 final class PromptController {
     private var panel: NSPanel?
@@ -26,9 +26,23 @@ final class PromptController {
     func show(app: GatedApp, trigger: Trigger, nthToday: Int, minutes: Int,
               onSubmit: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
         let text = PromptText()
-        let host = NSHostingView(rootView: PromptView(
-            app: app, trigger: trigger, nthToday: nthToday, minutes: minutes, text: text,
-            onSubmit: { onSubmit(text.value) }, onCancel: onCancel))
+        let view = PromptView(app: app, trigger: trigger, nthToday: nthToday, minutes: minutes, text: text,
+                              onSubmit: { onSubmit(text.value) }, onCancel: onCancel)
+        open(view, for: app, onEscape: onCancel) {
+            if wordCount(text.value) >= minimumWords { onSubmit(text.value) }
+        }
+    }
+
+    /// "Signal is locked until 10:00". Esc, OK, ⌘↵ or 6 seconds close it, so it can't stay stuck on screen.
+    func showLocked(app: GatedApp, until: String, onClose: @escaping () -> Void) {
+        open(LockedView(app: app, until: until, onClose: onClose), for: app, onEscape: onClose, onCommandReturn: onClose)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            if self?.bundleId == app.bundleId { onClose() }
+        }
+    }
+
+    private func open(_ view: some View, for app: GatedApp, onEscape: @escaping () -> Void, onCommandReturn: @escaping () -> Void) {
+        let host = NSHostingView(rootView: view)
         let size = host.fittingSize
 
         let glass = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
@@ -61,11 +75,11 @@ final class PromptController {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak panel] event in
             guard event.window === panel else { return event }
             if event.keyCode == 53 {
-                onCancel()
+                onEscape()
                 return nil
             }
             if [36, 76].contains(event.keyCode), event.modifierFlags.contains(.command) {
-                if wordCount(text.value) >= minimumWords { onSubmit(text.value) }
+                onCommandReturn()
                 return nil
             }
             return event
@@ -191,6 +205,33 @@ private struct PromptView: View {
         .padding(28)
         .frame(width: 560)
         .onAppear { DispatchQueue.main.async { focused = true } }
+    }
+}
+
+/// Super lock notice: no reason to give, the app has already been quit.
+private struct LockedView: View {
+    let app: GatedApp
+    let until: String
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 16) {
+                AppIcon(app: app, size: 60)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(app.name) is super locked").font(.system(size: 20, weight: .semibold))
+                    Text(until).foregroundStyle(.secondary)
+                }
+            }
+            HStack {
+                Spacer()
+                Button("OK", action: onClose).buttonStyle(.borderedProminent)
+            }
+        }
+        .font(.system(size: 15))
+        .controlSize(.large)
+        .padding(28)
+        .frame(width: 560)
     }
 }
 

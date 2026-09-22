@@ -14,17 +14,30 @@ public struct Blocklist: Codable, Identifiable, Hashable {
 }
 
 /// A recurring session, e.g. Mon-Fri 8:00-19:00 on "Messengers".
+/// With `superLock` its apps never open while it's on: no reason prompt, and the session is frozen in Settings.
 public struct ScheduledSession: Codable, Identifiable, Equatable {
     public var id: UUID
     public var blocklists: Set<UUID>
     public var schedule: Schedule
     public var enabled: Bool
+    public var superLock: Bool
 
-    public init(id: UUID = UUID(), blocklists: Set<UUID>, schedule: Schedule, enabled: Bool = true) {
+    public init(id: UUID = UUID(), blocklists: Set<UUID>, schedule: Schedule, enabled: Bool = true, superLock: Bool = false) {
         self.id = id
         self.blocklists = blocklists
         self.schedule = schedule
         self.enabled = enabled
+        self.superLock = superLock
+    }
+
+    /// Sessions saved before super lock have no `superLock` key.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        blocklists = try c.decode(Set<UUID>.self, forKey: .blocklists)
+        schedule = try c.decode(Schedule.self, forKey: .schedule)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        superLock = try c.decodeIfPresent(Bool.self, forKey: .superLock) ?? false
     }
 }
 
@@ -60,6 +73,36 @@ public func gatedNow(_ blocklists: [Blocklist], sessions: [ScheduledSession], qu
         + quickSessions.filter { $0.ends > now }.map(\.blocklists)
     let on = ids.reduce(into: Set<UUID>()) { $0.formUnion($1) }
     return unique(blocklists.filter { on.contains($0.id) }.flatMap(\.entries))
+}
+
+/// Super-locked sessions on at `now`. They're frozen: Settings can't disable, change or delete them,
+/// and their blocklists can't lose entries or be deleted.
+public func superLockedSessions(_ sessions: [ScheduledSession], now: Date, calendar: Calendar = .current) -> [ScheduledSession] {
+    activeSessions(sessions, now: now, calendar: calendar).filter(\.superLock)
+}
+
+/// Entries super-locked right now, unique by bundle ID. Always a subset of `gatedNow`.
+public func superLockedNow(_ blocklists: [Blocklist], sessions: [ScheduledSession],
+                           now: Date, calendar: Calendar = .current) -> [GatedApp] {
+    let on = superLockedSessions(sessions, now: now, calendar: calendar).reduce(into: Set<UUID>()) { $0.formUnion($1.blocklists) }
+    return unique(blocklists.filter { on.contains($0.id) }.flatMap(\.entries))
+}
+
+/// Blocklists a super-locked session uses right now.
+public func frozenBlocklists(_ sessions: [ScheduledSession], now: Date, calendar: Calendar = .current) -> Set<UUID> {
+    superLockedSessions(sessions, now: now, calendar: calendar).reduce(into: Set<UUID>()) { $0.formUnion($1.blocklists) }
+}
+
+/// When the super lock on `bundleId` ends: the latest end among the super-locked sessions gating it.
+/// Nil when one of them never ends (every day, all day). Only meaningful when the app is in `superLockedNow`.
+public func superLockEnd(_ bundleId: String, blocklists: [Blocklist], sessions: [ScheduledSession],
+                         now: Date, calendar: Calendar = .current) -> Date? {
+    let lists = Set(blocklists.filter { $0.entries.contains { $0.bundleId == bundleId } }.map(\.id))
+    let ends = superLockedSessions(sessions, now: now, calendar: calendar)
+        .filter { !$0.blocklists.isDisjoint(with: lists) }
+        .map { $0.schedule.end(of: now, calendar: calendar) }
+    if ends.contains(where: { $0 == nil }) { return nil }
+    return ends.compactMap { $0 }.max()
 }
 
 /// Deletes a blocklist and takes it out of every session. Quick sessions left with no blocklist end.
