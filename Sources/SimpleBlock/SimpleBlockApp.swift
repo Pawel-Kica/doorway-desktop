@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         registerLoginItem()
         gatekeeper.start()
+        // Open unless it was closed last time.
+        if UserDefaults.standard.object(forKey: FocusScreen.openKey) as? Bool ?? true { FocusScreen.shared.show(activate: false) }
     }
 
     /// Adds itself as a login item while it isn't one. Ad-hoc builds may fail, which is fine.
