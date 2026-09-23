@@ -20,7 +20,7 @@ struct MenuBarLabel: View {
 }
 
 /// The menu bar popover: what gates now, gated apps with timers, quick sessions, focus, Start session, Start focus,
-/// focus sounds, today's count, Settings, Quit. Drawn at the `uiScale` size, like Settings.
+/// music, today's count, Settings, Quit. Drawn at the `uiScale` size, like Settings.
 struct PopoverView: View {
     @ObservedObject var model: AppModel
     @AppStorage(UIScale.key) private var scale = UIScale.standard
@@ -106,8 +106,8 @@ struct PopoverView: View {
                 }
             }
             HStack(alignment: .top, spacing: 12 * scale) {
-                PopoverSymbol(symbol: "headphones")
-                FocusSoundsControl(sounds: FocusSounds.shared, scale: scale)
+                PopoverSymbol(symbol: "music.note")
+                MusicControl(music: Music.shared, scale: scale)
             }
             .padding(.horizontal, 10 * scale).padding(.vertical, 6 * scale)
             PopoverRow(symbol: "list.bullet", title: "Today's reasons",

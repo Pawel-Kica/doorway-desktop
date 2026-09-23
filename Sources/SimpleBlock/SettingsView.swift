@@ -2,12 +2,12 @@ import SimpleBlockCore
 import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case focus = "Focus", sounds = "Focus sounds", sessions = "Sessions", blocklists = "Blocklists", general = "General", history = "History"
+    case focus = "Focus", music = "Music", sessions = "Sessions", blocklists = "Blocklists", general = "General", history = "History"
     var id: Self { self }
     var symbol: String {
         switch self {
         case .focus: "scope"
-        case .sounds: "headphones"
+        case .music: "music.note"
         case .sessions: "calendar"
         case .blocklists: "list.bullet.rectangle"
         case .general: "gearshape"
@@ -16,7 +16,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// Settings window: sidebar with Focus, Focus sounds, Sessions, Blocklists, General, History, drawn at the `uiScale` size.
+/// Settings window: sidebar with Focus, Music, Sessions, Blocklists, General, History, drawn at the `uiScale` size.
 /// ⌘+, ⌘− and ⌘0 change the size while it's open. The window can't be resized, it's 960 x 680 times the scale.
 struct SettingsView: View {
     @ObservedObject var model: AppModel
@@ -37,7 +37,7 @@ struct SettingsView: View {
             Group {
                 switch model.settingsTab {
                 case .focus: FocusPane(model: model)
-                case .sounds: SoundsPane()
+                case .music: MusicPane()
                 case .sessions: SessionsPane(model: model)
                 case .blocklists: BlocklistsPane(model: model)
                 case .general: GeneralPane(model: model)
@@ -658,7 +658,7 @@ private struct BlocklistsPane: View {
 
 /// Renames in place: starts with the current name selected for typing, saves on Return or when it loses focus,
 /// Esc cancels (`done` gets nil). A rename alert started empty on macOS, whatever its binding held.
-private struct NameField: View {
+struct NameField: View {
     let name: String
     let done: (String?) -> Void
     @State private var text = ""
