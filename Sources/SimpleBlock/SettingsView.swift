@@ -2,11 +2,12 @@ import SimpleBlockCore
 import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case focus = "Focus", sessions = "Sessions", blocklists = "Blocklists", general = "General", history = "History"
+    case focus = "Focus", sounds = "Focus sounds", sessions = "Sessions", blocklists = "Blocklists", general = "General", history = "History"
     var id: Self { self }
     var symbol: String {
         switch self {
         case .focus: "scope"
+        case .sounds: "headphones"
         case .sessions: "calendar"
         case .blocklists: "list.bullet.rectangle"
         case .general: "gearshape"
@@ -15,7 +16,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// Settings window: sidebar with Focus, Sessions, Blocklists, General, History, drawn at the `uiScale` size.
+/// Settings window: sidebar with Focus, Focus sounds, Sessions, Blocklists, General, History, drawn at the `uiScale` size.
 /// ⌘+, ⌘− and ⌘0 change the size while it's open. The window can't be resized, it's 960 x 680 times the scale.
 struct SettingsView: View {
     @ObservedObject var model: AppModel
@@ -36,6 +37,7 @@ struct SettingsView: View {
             Group {
                 switch model.settingsTab {
                 case .focus: FocusPane(model: model)
+                case .sounds: SoundsPane()
                 case .sessions: SessionsPane(model: model)
                 case .blocklists: BlocklistsPane(model: model)
                 case .general: GeneralPane(model: model)
@@ -48,10 +50,25 @@ struct SettingsView: View {
         // An exact size rather than a minimum: the window isn't resizable, so it shrinks back only this way.
         .frame(width: size.width, height: size.height)
         .background { SizeShortcuts(scale: $scale) }
+        // Settings windows get the preferences toolbar: title on top, then an empty row meant for tab icons.
+        .background { WindowReader { $0.toolbarStyle = .unifiedCompact } }
         .environment(\.uiScale, scale)
         // The window grows from its top left corner, which can push its bottom off the screen.
         .onChange(of: scale) { DispatchQueue.main.async { NSApp.keyWindow?.keepOnScreen() } }
     }
+}
+
+/// Hands the hosting window to `configure` once the view is in one.
+private struct WindowReader: NSViewRepresentable {
+    let configure: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { view.window.map(configure) }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {}
 }
 
 /// Sidebar icon in a column that grows with the scale. The system one is fixed, so big icons ran into the title.
@@ -258,7 +275,7 @@ private struct SessionsPane: View {
     }
 }
 
-/// A scheduled session folded to one row: chevron, blocklists, "18:00 to 10:00 · Every day" (plus a lock with super lock),
+/// A scheduled session folded to one row: chevron, its name (or blocklists), "18:00 to 10:00 · Every day" (plus a lock with super lock),
 /// then the status and the enabled switch. Clicking anywhere but the switch opens or folds it.
 private struct SessionHeader: View {
     @ObservedObject var model: AppModel
@@ -277,7 +294,7 @@ private struct SessionHeader: View {
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(open ? 90 : 0))
                         .frame(width: 16 * scale)
-                    RowTitle(title: model.rules.names(session.blocklists)) {
+                    RowTitle(title: model.rules.title(session)) {
                         Text("\(times) · \(session.schedule.daysSummary())")
                         if session.superLock {
                             Image(systemName: "lock.fill").foregroundStyle(frozen ? Color.red : Color.secondary)
@@ -346,7 +363,7 @@ private struct QuickSessionRow: View {
 }
 
 /// Session title in semibold with a secondary line under it.
-private struct RowTitle<Detail: View>: View {
+struct RowTitle<Detail: View>: View {
     let title: String
     @ViewBuilder var detail: Detail
     @Environment(\.uiScale) private var scale
@@ -391,6 +408,13 @@ private struct SessionEditor: View {
 
     var body: some View {
         Group {
+            // Not frozen with the rest: a name changes nothing about what's gated.
+            CardRow {
+                SettingRow(title: "Name") {
+                    TextField(model.rules.names(session.blocklists), text: $session.name)
+                        .frame(width: 320 * scale)
+                }
+            }
             Group {
                 CardRow {
                     SettingRow(title: "Days") {
@@ -544,22 +568,26 @@ private struct GeneralPane: View {
 private struct BlocklistsPane: View {
     @ObservedObject var model: AppModel
     @Environment(\.uiScale) private var scale
-    /// Blocklist the rename alert works on.
-    @State private var target: UUID?
-    /// The app being renamed.
-    @State private var editing: GatedApp?
-    @State private var showingEditor = false
-    @State private var name = ""
-    /// The blocklist being renamed, nil while adding one.
-    @State private var renaming: Blocklist?
-    @State private var showingNamer = false
-    @State private var listName = ""
+    /// The blocklist whose title is being renamed in place.
+    @State private var renamingList: UUID?
+    /// The app entry being renamed in place, with its blocklist.
+    @State private var renamingApp: (list: UUID, app: String)?
+    @State private var adding = false
+    @State private var newName = ""
 
     var body: some View {
         Pane {
             ForEach($model.rules.blocklists) { $list in
                 // A list a super-locked session uses right now keeps its apps and can't be deleted.
                 let frozen = model.isFrozen(list: list.id)
+                if renamingList == list.id {
+                    NameField(name: list.name) { typed in
+                        if let typed = typed?.trimmingCharacters(in: .whitespacesAndNewlines), !typed.isEmpty { list.name = typed }
+                        renamingList = nil
+                    }
+                    .sectionTitleFont()
+                    .padding(.top, 8 * scale)
+                } else {
                 SectionTitle(title: list.name) {
                     if frozen {
                         Label("Frozen while super locked", systemImage: "lock.fill")
@@ -567,11 +595,12 @@ private struct BlocklistsPane: View {
                     }
                     // Same spacing as the row buttons, so the icons line up in columns.
                     HStack(spacing: 14 * scale) {
-                        IconButton(symbol: "pencil", help: "Rename blocklist") { startNaming(list) }
+                        IconButton(symbol: "pencil", help: "Rename blocklist") { renamingList = list.id }
                         IconButton(symbol: "trash", help: "Delete blocklist") { model.rules.deleteBlocklist(list.id) }
                             .disabled(frozen)
                     }
                     .padding(.trailing, 14 * scale)
+                }
                 }
                 Card {
                     if list.entries.isEmpty {
@@ -581,9 +610,16 @@ private struct BlocklistsPane: View {
                         CardRow(divider: app.id != list.entries.first?.id) {
                             HStack(spacing: 14 * scale) {
                                 AppIcon(app: app, size: 32 * scale)
-                                Text(app.name)
+                                if renamingApp?.list == list.id && renamingApp?.app == app.id {
+                                    NameField(name: app.name) { typed in
+                                        if let typed { list.entries.rename(id: app.id, to: typed) }
+                                        renamingApp = nil
+                                    }
+                                } else {
+                                    Text(app.name)
+                                }
                                 Spacer()
-                                IconButton(symbol: "pencil", help: "Rename") { startEditing(app, in: list.id) }
+                                IconButton(symbol: "pencil", help: "Rename") { renamingApp = (list.id, app.id) }
                                 IconButton(symbol: "minus.circle", help: "Remove from \(list.name)") { list.entries.removeAll { $0.id == app.id } }
                                     .disabled(frozen)
                             }
@@ -602,51 +638,51 @@ private struct BlocklistsPane: View {
             }
             HStack {
                 Spacer()
-                Button { startNaming(nil) } label: { Text("Add blocklist…").bezelPadding() }
+                Button { newName = ""; adding = true } label: { Text("Add blocklist…").bezelPadding() }
             }
         }
         .navigationTitle("Blocklists")
-        .alert("Rename \(editing?.name ?? "")", isPresented: $showingEditor) {
-            TextField("Name, e.g. Signal", text: $name)
-            Button("Save") { save() }
-            Button("Cancel", role: .cancel) {}
-        }
-        .alert(renaming == nil ? "Add blocklist" : "Rename \(renaming!.name)", isPresented: $showingNamer) {
-            TextField("Name, e.g. Messengers", text: $listName)
-            Button(renaming == nil ? "Add" : "Save") { saveName() }
+        .alert("Add blocklist", isPresented: $adding) {
+            TextField("Name, e.g. Messengers", text: $newName)
+            Button("Add") { addBlocklist() }
             Button("Cancel", role: .cancel) {}
         }
     }
 
-    /// Opens the rename alert for an app of a blocklist.
-    private func startEditing(_ app: GatedApp, in list: UUID) {
-        target = list
-        editing = app
-        name = app.name
-        showingEditor = true
+    /// An empty name makes "Blocklist".
+    private func addBlocklist() {
+        let typed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        model.rules.blocklists.append(Blocklist(name: typed.isEmpty ? "Blocklist" : typed))
+    }
+}
+
+/// Renames in place: starts with the current name selected for typing, saves on Return or when it loses focus,
+/// Esc cancels (`done` gets nil). A rename alert started empty on macOS, whatever its binding held.
+private struct NameField: View {
+    let name: String
+    let done: (String?) -> Void
+    @State private var text = ""
+    @State private var finished = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("Name", text: $text)
+            .focused($focused)
+            .onAppear {
+                text = name
+                DispatchQueue.main.async { focused = true }
+            }
+            .onSubmit { finish(text) }
+            .onExitCommand { finish(nil) }
+            .onChange(of: focused) { if !focused { finish(text) } }
+            .frame(maxWidth: 420)
     }
 
-    private func save() {
-        guard let editing, let index = model.rules.blocklists.firstIndex(where: { $0.id == target }) else { return }
-        model.rules.blocklists[index].entries.rename(id: editing.id, to: name)
-    }
-
-    /// Opens the name alert for a new blocklist (nil) or a rename.
-    private func startNaming(_ list: Blocklist?) {
-        renaming = list
-        listName = list?.name ?? ""
-        showingNamer = true
-    }
-
-    /// An empty name keeps the old one, or makes "Blocklist" for a new list.
-    private func saveName() {
-        let typed = listName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let renaming {
-            guard !typed.isEmpty, let index = model.rules.blocklists.firstIndex(where: { $0.id == renaming.id }) else { return }
-            model.rules.blocklists[index].name = typed
-        } else {
-            model.rules.blocklists.append(Blocklist(name: typed.isEmpty ? "Blocklist" : typed))
-        }
+    /// Once only: Return or Esc also takes the focus away, which would save a second time.
+    private func finish(_ typed: String?) {
+        guard !finished else { return }
+        finished = true
+        done(typed)
     }
 }
 
@@ -672,14 +708,7 @@ private struct HistoryPane: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8 * scale) {
                 HistoryDashboard(entries: model.entries, now: model.now, scale: scale)
-                HStack {
-                    Text("\(model.entries.count) entries in \((ReasonLog.defaultURL.path as NSString).abbreviatingWithTildeInPath)")
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1).truncationMode(.middle)
-                    Spacer()
-                    Button { model.showLogInFinder() } label: { Text("Show in Finder").bezelPadding() }
-                }
-                .padding(.top, 16 * scale).padding(.bottom, 8 * scale)
+                    .padding(.bottom, 16 * scale)
                 if days.isEmpty {
                     Text("No reasons yet").foregroundStyle(.secondary)
                 }

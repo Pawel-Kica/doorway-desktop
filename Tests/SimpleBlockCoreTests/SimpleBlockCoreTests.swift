@@ -405,6 +405,24 @@ final class SessionRowTests: XCTestCase {
         XCTAssertEqual(ScheduledSession(blocklists: [], schedule: Schedule(days: [])).status(at: date(12), calendar: utc), .off)
     }
 
+    func testSessionTitleIsItsNameOrItsBlocklists() {
+        let list = Blocklist(name: "Messengers")
+        var session = ScheduledSession(blocklists: [list.id], schedule: Schedule(from: 10 * 60, to: 18 * 60))
+        let rules = Rules(blocklists: [list], sessions: [session])
+        XCTAssertEqual(rules.title(session), "Messengers")
+        session.name = "  "
+        XCTAssertEqual(rules.title(session), "Messengers")
+        session.name = " Deep work "
+        XCTAssertEqual(rules.title(session), "Deep work")
+    }
+
+    func testSessionSavedBeforeNamesDecodesUnnamed() throws {
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","blocklists":[],"schedule":{"days":[2],"from":600,"to":1080},"enabled":true,"superLock":true}"#
+        let session = try JSONDecoder().decode(ScheduledSession.self, from: Data(json.utf8))
+        XCTAssertEqual(session.name, "")
+        XCTAssertTrue(session.superLock)
+    }
+
     func testDuplicateSessionGoesRightBelowDisabled() {
         let night = ScheduledSession(blocklists: [messengers], schedule: Schedule(from: 18 * 60, to: 10 * 60), superLock: true)
         let day = ScheduledSession(blocklists: [messengers], schedule: Schedule(from: 10 * 60, to: 18 * 60))

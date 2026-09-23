@@ -17,23 +17,28 @@ public struct Blocklist: Codable, Identifiable, Hashable {
 /// With `superLock` its apps never open while it's on: no reason prompt, and the session is frozen in Settings.
 public struct ScheduledSession: Codable, Identifiable, Equatable {
     public var id: UUID
+    /// Typed by Paweł, e.g. "Deep work mornings". Empty means the session is titled by its blocklists.
+    public var name: String
     public var blocklists: Set<UUID>
     public var schedule: Schedule
     public var enabled: Bool
     public var superLock: Bool
 
-    public init(id: UUID = UUID(), blocklists: Set<UUID>, schedule: Schedule, enabled: Bool = true, superLock: Bool = false) {
+    public init(id: UUID = UUID(), name: String = "", blocklists: Set<UUID>, schedule: Schedule, enabled: Bool = true,
+                superLock: Bool = false) {
         self.id = id
+        self.name = name
         self.blocklists = blocklists
         self.schedule = schedule
         self.enabled = enabled
         self.superLock = superLock
     }
 
-    /// Sessions saved before super lock have no `superLock` key.
+    /// Sessions saved before super lock have no `superLock` key, before names no `name`.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
         blocklists = try c.decode(Set<UUID>.self, forKey: .blocklists)
         schedule = try c.decode(Schedule.self, forKey: .schedule)
         enabled = try c.decode(Bool.self, forKey: .enabled)
@@ -118,6 +123,12 @@ public struct Rules: Equatable {
     public func names(_ lists: Set<UUID>) -> String {
         let names = blocklists.filter { lists.contains($0.id) }.map(\.name)
         return names.isEmpty ? "No blocklist" : names.joined(separator: ", ")
+    }
+
+    /// A session's title in Settings: its name, or its blocklists when it has none.
+    public func title(_ session: ScheduledSession) -> String {
+        let typed = session.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return typed.isEmpty ? names(session.blocklists) : typed
     }
 
     /// Enabled scheduled sessions on at `now`.

@@ -2,8 +2,8 @@ import AppKit
 import SimpleBlockCore
 import SwiftUI
 
-/// Focus tab. Off: allowed apps as chips, a length and Start focus (⌘↵). On: a big countdown and End focus.
-/// The allowed apps stay editable either way, edits during a focus apply right away. Focus sounds sit below both.
+/// Focus tab. Off: allowed apps as chips, a length and Start focus. On: a big countdown and End focus.
+/// The allowed apps stay editable either way, edits during a focus apply right away.
 struct FocusPane: View {
     @ObservedObject var model: AppModel
     /// Length of the next focus, the last one picked.
@@ -57,10 +57,6 @@ struct FocusPane: View {
             }
             Text("Everything else stays open, just hidden. Finder and Simple Block always work.")
                 .noteFont().foregroundStyle(.secondary).padding(.leading, 4 * scale)
-            SectionTitle(title: "Focus sounds") {}.padding(.top, 12 * scale)
-            Card {
-                CardRow(divider: false) { FocusSoundsControl(sounds: FocusSounds.shared, scale: scale) }
-            }
         }
         .navigationTitle("Focus")
     }
@@ -95,14 +91,12 @@ struct FocusPane: View {
             HStack(spacing: 10 * scale) {
                 Image(systemName: "scope")
                 Text("Start focus")
-                Text("⌘↵").opacity(0.6)
             }
             .scaledFont(17, weight: .semibold)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6 * scale)
         }
         .buttonStyle(.borderedProminent)
-        .keyboardShortcut(.return, modifiers: .command)
         .disabled(model.focusApps.isEmpty)
     }
 }

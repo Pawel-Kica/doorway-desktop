@@ -180,16 +180,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func showLogInFinder() {
-        if FileManager.default.fileExists(atPath: log.url.path) {
-            NSWorkspace.shared.activateFileViewerSelecting([log.url])
-        } else {
-            let dir = log.url.deletingLastPathComponent()
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            NSWorkspace.shared.open(dir)
-        }
-    }
-
     /// Logs `quit` and exits. Quitting is the off switch.
     func quit() {
         record(LogEntry(ts: Date(), bundleId: Bundle.main.bundleIdentifier ?? "com.pawel.simple-block", app: "Simple Block", kind: .quit))

@@ -242,3 +242,86 @@ struct FocusSoundsControl: View {
         .font(.system(size: 15 * scale))
     }
 }
+
+/// Focus sounds tab in Settings: what plays with its volume on top, then every sound by category.
+/// Clicking a sound plays it, clicking the one playing pauses it.
+struct SoundsPane: View {
+    @ObservedObject var sounds = FocusSounds.shared
+    @Environment(\.uiScale) private var scale
+
+    var body: some View {
+        Pane {
+            Card { CardRow(divider: false) { nowPlaying } }
+            ForEach(FocusSound.Category.allCases, id: \.self) { category in
+                SectionTitle(title: category.rawValue) {}.padding(.top, 8 * scale)
+                Card {
+                    let list = FocusSound.all.filter { $0.category == category }
+                    ForEach(list) { sound in
+                        CardRow(divider: sound.id != list.first?.id) { row(sound) }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Focus sounds")
+    }
+
+    /// Big play button, the sound's name, the volume.
+    private var nowPlaying: some View {
+        HStack(spacing: 16 * scale) {
+            Button(action: sounds.toggle) {
+                Image(systemName: sounds.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 20 * scale))
+                    .foregroundStyle(.white)
+                    .frame(width: 52 * scale, height: 52 * scale)
+                    .background(Color.green, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help(sounds.isPlaying ? "Pause" : "Play")
+            RowTitle(title: sounds.sound.name) {
+                if sounds.failed {
+                    Text(sounds.sound.isStream ? "Can't reach this stream" : "Can't play the noise").foregroundStyle(.red)
+                } else {
+                    Text(sounds.isPlaying ? "Playing · \(sounds.sound.category.rawValue)" : sounds.sound.category.rawValue)
+                }
+            }
+            Spacer(minLength: 24 * scale)
+            Image(systemName: "speaker.wave.3.fill", variableValue: sounds.volume)
+                .foregroundStyle(.secondary)
+            Slider(value: $sounds.volume, in: 0...1)
+                .tint(.green)
+                .frame(width: 240 * scale)
+        }
+    }
+
+    private func row(_ sound: FocusSound) -> some View {
+        let current = sound == sounds.sound
+        return Button {
+            if current { sounds.toggle() } else { sounds.select(sound); if !sounds.isPlaying { sounds.play() } }
+        } label: {
+            HStack(spacing: 14 * scale) {
+                Image(systemName: symbol(sound.category))
+                    .scaledFont(16)
+                    .foregroundStyle(current ? Color.green : .secondary)
+                    .frame(width: 28 * scale)
+                Text(sound.name).fontWeight(current ? .semibold : .regular)
+                Spacer()
+                if current && sounds.isPlaying {
+                    Label("Playing", systemImage: "waveform").noteFont().foregroundStyle(.green)
+                } else {
+                    Image(systemName: "play.fill").noteFont().foregroundStyle(.tertiary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func symbol(_ category: FocusSound.Category) -> String {
+        switch category {
+        case .lofi: "headphones"
+        case .jazz: "music.note"
+        case .ambient: "cloud"
+        case .noise: "waveform"
+        }
+    }
+}
