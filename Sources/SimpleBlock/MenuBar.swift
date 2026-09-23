@@ -87,8 +87,9 @@ struct PopoverView: View {
                     VStack(alignment: .leading, spacing: 1 * scale) {
                         Text("Focus")
                         HStack(spacing: 6 * scale) {
-                            Text("\(countdown(model.focusLeft)) left").monospacedDigit()
-                            ForEach(model.focusApps) { app in AppIcon(app: app, size: 16 * scale).help(app.name) }
+                            Text("\(countdown(model.focusLeft)) left").monospacedDigit().fixedSize()
+                            // As many as fit next to the time, lists can hold more.
+                            ForEach(model.focusRules.allowed.prefix(6)) { app in AppIcon(app: app, size: 16 * scale).help(app.name) }
                         }
                         .scaledFont(13).foregroundStyle(.secondary)
                     }
@@ -99,7 +100,7 @@ struct PopoverView: View {
             }
             if !model.rules.blocklists.isEmpty { StartSessionMenu(model: model) }
             if model.focusLeft == 0 {
-                if model.focusApps.isEmpty {
+                if model.focusRules.allowed.isEmpty {
                     PopoverRow(symbol: "scope", title: "Start focus") { open(.focus) }
                 } else {
                     StartFocusMenu(model: model)
@@ -196,8 +197,9 @@ private struct StartSessionMenu: View {
     }
 }
 
-/// "Start focus": a few lengths under the focus apps' names. Picking one closes the popover, which would
-/// otherwise stay open over the first focus app (Simple Block isn't active, so it doesn't close by itself).
+/// "Start focus": a few lengths under the names of what focus allows ("Deep work, Slack"). Picking one closes the
+/// popover, which would otherwise stay open over the first allowed app (Simple Block isn't active, so it doesn't close
+/// by itself).
 private struct StartFocusMenu: View {
     @ObservedObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -205,7 +207,7 @@ private struct StartFocusMenu: View {
 
     var body: some View {
         Menu {
-            Section(model.focusNames) {
+            Section(model.focusRules.names) {
                 ForEach(FocusPane.lengths, id: \.0) { minutes, label in
                     Button(label) {
                         dismiss()

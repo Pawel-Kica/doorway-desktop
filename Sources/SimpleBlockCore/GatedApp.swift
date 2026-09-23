@@ -16,6 +16,11 @@ public struct GatedApp: Codable, Hashable, Identifiable {
 }
 
 extension Array where Element == GatedApp {
+    /// Appends the apps that aren't in yet, by bundle ID.
+    public mutating func add(_ apps: [GatedApp]) {
+        for app in apps where !contains(where: { $0.bundleId == app.bundleId }) { append(app) }
+    }
+
     /// Renames an entry. An empty name keeps the old one.
     public mutating func rename(id: String, to name: String) {
         let typed = name.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -3,8 +3,58 @@ import Foundation
 /// Apps a focus session never hides: Finder and Simple Block itself.
 public let alwaysAllowedInFocus: Set<String> = ["com.apple.finder", "com.pawel.simple-block"]
 
+/// Allowlists have the blocklists' shape: a named list of apps, e.g. "Deep work". Focus uses the ones picked for it.
+public typealias Allowlist = Blocklist
+
+/// Everything that decides what focus allows: the allowlists, the ones picked for focus, and apps allowed on their own.
+/// `allowed` is worked out on every call, so editing a list or the picks during a focus applies right away.
+public struct FocusRules: Equatable {
+    public var allowlists: [Allowlist]
+    /// Allowlists focus uses, picked in the Focus tab. IDs of deleted lists are ignored.
+    public var picked: Set<UUID>
+    /// Apps allowed outside any list ("Also allow" in the Focus tab).
+    public var apps: [GatedApp]
+
+    public init(allowlists: [Allowlist] = [], picked: Set<UUID> = [], apps: [GatedApp] = []) {
+        self.allowlists = allowlists
+        self.picked = picked
+        self.apps = apps
+    }
+
+    /// Focus before allowlists had only its own apps. They become a picked allowlist "Deep work"
+    /// and the own apps start empty. No apps, no list.
+    public static func migrated(apps: [GatedApp]) -> FocusRules {
+        guard !apps.isEmpty else { return FocusRules() }
+        let list = Allowlist(name: "Deep work", entries: apps)
+        return FocusRules(allowlists: [list], picked: [list.id])
+    }
+
+    /// Picked allowlists in Settings order.
+    public var pickedLists: [Allowlist] { allowlists.filter { picked.contains($0.id) } }
+
+    /// The picked allowlists' apps, unique by bundle ID.
+    public var listed: [GatedApp] { unique(pickedLists.flatMap(\.entries)) }
+
+    /// What focus allows: the picked allowlists' apps, then the apps on their own, unique by bundle ID.
+    public var allowed: [GatedApp] { unique(listed + apps) }
+
+    /// For toasts, the popover and the log, e.g. "Deep work, Slack": picked lists that hold apps, then own apps
+    /// that aren't in one of them.
+    public var names: String {
+        let lists = pickedLists.filter { !$0.entries.isEmpty }
+        let inLists = Set(lists.flatMap(\.entries).map(\.bundleId))
+        return (lists.map(\.name) + apps.filter { !inLists.contains($0.bundleId) }.map(\.name)).joined(separator: ", ")
+    }
+
+    /// Deletes an allowlist and drops it from the picks.
+    public mutating func deleteAllowlist(_ id: UUID) {
+        allowlists.removeAll { $0.id == id }
+        picked.remove(id)
+    }
+}
+
 /// A running focus session: until `ends` only its allowed apps may come to the front, everything else gets hidden.
-/// The allowed apps aren't stored here, they're the model's focus apps, so editing them applies right away.
+/// The allowed apps aren't stored here, they come from `FocusRules`, so editing them applies right away.
 public struct FocusSession: Codable, Equatable {
     public var started: Date
     public var ends: Date

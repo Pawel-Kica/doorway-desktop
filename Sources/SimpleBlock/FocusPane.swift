@@ -2,8 +2,8 @@ import AppKit
 import SimpleBlockCore
 import SwiftUI
 
-/// Focus tab. Off: allowed apps as chips, a length and Start focus. On: a big countdown and End focus.
-/// The allowed apps stay editable either way, edits during a focus apply right away.
+/// Focus tab. Off: the allowlists as toggle chips, apps allowed on their own as chips, a length and Start focus.
+/// On: a big countdown and End focus. What's allowed stays editable either way, edits during a focus apply right away.
 struct FocusPane: View {
     @ObservedObject var model: AppModel
     /// Length of the next focus, the last one picked.
@@ -17,16 +17,24 @@ struct FocusPane: View {
         // focusLeft rather than focus: a focus that just ran out reads as off until Gatekeeper ends it.
         let on = model.focusLeft > 0
         Pane {
-            if on, let focus = model.focus { timeLeftCard(until: focus.ends) }
-            SectionTitle(title: "Allowed apps") {}
+            if on, let focus = model.focus { timeLeftCard(until: focus.ends).padding(.bottom, 12 * scale) }
+            SectionTitle(title: "Allowlists") {
+                // Negative padding keeps the title row as tall as one without a button.
+                IconButton(symbol: "pencil", help: "Edit allowlists") { model.settingsTab = .allowlists }
+                    .padding(.vertical, -4 * scale).padding(.trailing, 6 * scale)
+            }
+            allowlistsCard.padding(.bottom, 12 * scale)
+            SectionTitle(title: "Also allow") {}
             Card {
                 CardRow(divider: false) {
-                    if model.focusApps.isEmpty {
+                    if model.focusRules.apps.isEmpty {
                         Text("No apps").foregroundStyle(.secondary)
                     } else {
                         FlowLayout(spacing: 8 * scale) {
-                            ForEach(model.focusApps) { app in
-                                AppChip(app: app, removable: model.canRemoveFocusApp) { model.removeFocusApp(app.bundleId) }
+                            ForEach(model.focusRules.apps) { app in
+                                AppChip(app: app, removable: model.canChangeFocus { $0.apps.removeAll { $0.id == app.id } }) {
+                                    model.removeFocusApp(app.bundleId)
+                                }
                             }
                         }
                     }
@@ -61,6 +69,46 @@ struct FocusPane: View {
         .navigationTitle("Focus")
     }
 
+    /// The allowlists as toggle chips, then the apps the picked ones hold. A list that's the only thing a running
+    /// focus allows can't be unpicked.
+    private var allowlistsCard: some View {
+        let rules = model.focusRules
+        return Card {
+            CardRow(divider: false) {
+                if rules.allowlists.isEmpty {
+                    Text("No allowlists").foregroundStyle(.secondary)
+                } else {
+                    FlowLayout(spacing: 6 * scale) {
+                        ForEach(rules.allowlists) { list in
+                            let isOn = rules.picked.contains(list.id)
+                            Toggle(isOn: Binding(
+                                get: { isOn },
+                                set: { if $0 { model.focusRules.picked.insert(list.id) } else { model.focusRules.picked.remove(list.id) } })) {
+                                Text(list.name).bezelPadding()
+                            }
+                            .toggleStyle(.button)
+                            .disabled(isOn && !model.canChangeFocus { $0.picked.remove(list.id) })
+                            .help(list.entries.isEmpty ? "No apps" : list.entries.map(\.name).joined(separator: ", "))
+                        }
+                    }
+                }
+            }
+            if !rules.listed.isEmpty {
+                CardRow {
+                    FlowLayout(spacing: 14 * scale) {
+                        ForEach(rules.listed) { app in
+                            HStack(spacing: 6 * scale) {
+                                AppIcon(app: app, size: 20 * scale)
+                                Text(app.name).lineLimit(1)
+                            }
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     /// The running focus: time left in big digits, when it ends, End focus.
     private func timeLeftCard(until ends: Date) -> some View {
         Card {
@@ -85,7 +133,7 @@ struct FocusPane: View {
         }
     }
 
-    /// Full width, accent colored. Needs at least one allowed app.
+    /// Full width, accent colored. Needs something to allow.
     private var startButton: some View {
         Button { model.startFocus(minutes: minutes) } label: {
             HStack(spacing: 10 * scale) {
@@ -97,7 +145,7 @@ struct FocusPane: View {
             .padding(.vertical, 6 * scale)
         }
         .buttonStyle(.borderedProminent)
-        .disabled(model.focusApps.isEmpty)
+        .disabled(model.focusRules.allowed.isEmpty)
     }
 }
 
@@ -123,11 +171,11 @@ private struct AppChip: View {
         }
         .padding(.leading, 7 * scale).padding(.trailing, 9 * scale).padding(.vertical, 5 * scale)
         .background(Color.primary.opacity(0.07), in: Capsule())
-        .overlay(Capsule().stroke(Color.primary.opacity(0.1)))
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1)))
     }
 }
 
-/// "Add running app": pops a menu of the regular apps running now that aren't allowed yet, by name. Finder and
+/// "Add running app": pops a menu of the regular apps running now that focus doesn't allow yet, by name. Finder and
 /// Simple Block are left out, they always work. An AppKit menu, since a SwiftUI Menu button keeps a small fixed font.
 private struct AddRunningAppButton: View {
     @ObservedObject var model: AppModel
@@ -146,7 +194,7 @@ private struct AddRunningAppButton: View {
     private func showMenu() {
         let menu = NSMenu()
         menu.font = .systemFont(ofSize: 13 * scale)
-        var seen = alwaysAllowedInFocus.union(model.focusApps.map(\.bundleId))
+        var seen = alwaysAllowedInFocus.union(model.focusRules.allowed.map(\.bundleId))
         var apps: [GatedApp] = []
         for running in NSWorkspace.shared.runningApplications where running.activationPolicy == .regular {
             guard let id = running.bundleIdentifier, let url = running.bundleURL, seen.insert(id).inserted else { continue }

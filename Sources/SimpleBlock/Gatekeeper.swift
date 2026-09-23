@@ -4,7 +4,7 @@ import SimpleBlockCore
 
 /// The gating: watches apps launch, activate and unhide, hides blocklisted ones and asks for a reason,
 /// runs their timers, and quits them on Never mind, time up in the background and super lock.
-/// During focus it hides every regular app outside the focus apps and ends focus when time's up.
+/// During focus it hides every regular app outside what focus allows and ends focus when time's up.
 /// What's gated comes from the model's rules, `Rules.access` decides; `FocusSession.hides` for focus.
 @MainActor
 final class Gatekeeper {
@@ -91,7 +91,7 @@ final class Gatekeeper {
     /// Raycast are left alone, but a menu bar app that's also in the Dock, like Wispr Flow, is regular and gets hidden.
     private func focusHides(_ app: NSRunningApplication, now: Date) -> Bool {
         guard app.activationPolicy == .regular, let focus = model.focus else { return false }
-        return focus.hides(app.bundleIdentifier, allowed: model.focusApps, at: now)
+        return focus.hides(app.bundleIdentifier, allowed: model.focusRules.allowed, at: now)
     }
 
     /// Hides an app outside focus, never quits it. Toast and `hidden` log entry once per attempt.
@@ -103,17 +103,17 @@ final class Gatekeeper {
         model.record(LogEntry(ts: now, bundleId: id, app: name, kind: .hidden))
         let left = model.focus?.remaining(at: now) ?? 0
         toast.show(icon: app.icon ?? NSApp.applicationIconImage,
-                   title: "\(name) is hidden while you focus", subtitle: "\(model.focusNames) · \(countdown(left)) left")
+                   title: "\(name) is hidden while you focus", subtitle: "\(model.focusRules.names) · \(countdown(left)) left")
     }
 
     /// Focus starting: close a prompt it makes pointless, hide every running regular app outside it, then open the
-    /// first focus app so it lands in front.
+    /// first allowed app so it lands in front.
     /// Called before `model.focus` changes, so it gets the new session.
     private func startFocus(_ session: FocusSession) {
         // A reason prompt for an app this focus hides has nothing left to ask. It closes quietly, no `cancelled` line.
-        if let id = prompt.bundleId, session.hides(id, allowed: model.focusApps, at: Date()) { prompt.close() }
+        if let id = prompt.bundleId, session.hides(id, allowed: model.focusRules.allowed, at: Date()) { prompt.close() }
         hideAll(outside: session)
-        guard let first = model.focusApps.first else { return }
+        guard let first = model.focusRules.allowed.first else { return }
         // activate() on another app gets refused from the background. Launch Services brings it forward.
         let process = running(first).first
         process?.unhide()
@@ -123,8 +123,9 @@ final class Gatekeeper {
     /// Hides every visible regular app outside focus. Not attempts, so no toast or log entry.
     private func hideAll(outside session: FocusSession) {
         let now = Date()
+        let allowed = model.focusRules.allowed
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && !app.isHidden {
-            guard let id = app.bundleIdentifier, session.hides(id, allowed: model.focusApps, at: now) else { continue }
+            guard let id = app.bundleIdentifier, session.hides(id, allowed: allowed, at: now) else { continue }
             app.hide()
             // Hiding one app can activate another for a moment, that's not an attempt either.
             focusNoticed[id] = now
@@ -195,7 +196,7 @@ final class Gatekeeper {
         if let focus = model.focus, !focus.isOn(at: now) {
             model.endFocus()
             toast.show(icon: NSApp.applicationIconImage, title: "Focus done",
-                       subtitle: "\(durationText(focus.minutesRun(at: now))) on \(model.focusNames)")
+                       subtitle: "\(durationText(focus.minutesRun(at: now))) on \(model.focusRules.names)")
         }
         // A super lock starting quits its apps right away, timer or not.
         for locked in model.rules.superLocked(at: now) {

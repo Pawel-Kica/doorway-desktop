@@ -5,6 +5,8 @@ private let start = Date(timeIntervalSince1970: 1_790_000_000)
 private let session = FocusSession(started: start, ends: start.addingTimeInterval(2 * 3600))
 private let obsidian = GatedApp(bundleId: "md.obsidian", name: "Obsidian", path: "/Applications/Obsidian.app")
 private let todoist = GatedApp(bundleId: "com.todoist.mac.Todoist", name: "Todoist", path: "/Applications/Todoist.app")
+private let slack = GatedApp(bundleId: "com.tinyspeck.slackmacgap", name: "Slack", path: "/Applications/Slack.app")
+private let notes = GatedApp(bundleId: "com.apple.Notes", name: "Notes", path: "/System/Applications/Notes.app")
 
 private func minutes(_ n: Double) -> Date { start.addingTimeInterval(n * 60) }
 
@@ -57,6 +59,64 @@ final class FocusTests: XCTestCase {
         XCTAssertEqual(durationText(60), "1 h")
         XCTAssertEqual(durationText(90), "1 h 30 min")
         XCTAssertEqual(durationText(240), "4 h")
+    }
+
+    func testAllowedIsPickedListsThenOwnAppsUnique() {
+        let deepWork = Allowlist(name: "Deep work", entries: [obsidian, todoist])
+        let chat = Allowlist(name: "Chat", entries: [slack])
+        let rules = FocusRules(allowlists: [deepWork, chat], picked: [deepWork.id], apps: [todoist, notes])
+        XCTAssertEqual(rules.allowed, [obsidian, todoist, notes], "Chat isn't picked, Todoist counts once")
+        XCTAssertFalse(session.hides("md.obsidian", allowed: rules.allowed, at: minutes(10)))
+        XCTAssertTrue(session.hides("com.tinyspeck.slackmacgap", allowed: rules.allowed, at: minutes(10)))
+    }
+
+    func testPickedIdsOfMissingListsAreIgnored() {
+        XCTAssertEqual(FocusRules(picked: [UUID()], apps: [notes]).allowed, [notes])
+        XCTAssertEqual(FocusRules(picked: [UUID()]).allowed, [])
+    }
+
+    func testEditsApplyLive() {
+        let deepWork = Allowlist(name: "Deep work", entries: [obsidian])
+        var rules = FocusRules(allowlists: [deepWork], picked: [deepWork.id])
+        rules.allowlists[0].entries.add([todoist])
+        XCTAssertEqual(rules.allowed, [obsidian, todoist])
+        rules.picked = []
+        XCTAssertEqual(rules.allowed, [])
+    }
+
+    func testNamesAreListsFirstThenOwnAppsOutsideThem() {
+        let deepWork = Allowlist(name: "Deep work", entries: [obsidian, todoist])
+        let empty = Allowlist(name: "Empty")
+        let chat = Allowlist(name: "Chat", entries: [slack])
+        let rules = FocusRules(allowlists: [deepWork, empty, chat], picked: [deepWork.id, empty.id], apps: [todoist, notes])
+        XCTAssertEqual(rules.names, "Deep work, Notes", "Empty lists and apps already in a picked list are left out")
+        XCTAssertEqual(FocusRules(apps: [obsidian, todoist]).names, "Obsidian, Todoist")
+        XCTAssertEqual(FocusRules().names, "")
+    }
+
+    func testDeletingAllowlistDropsItsPick() {
+        let deepWork = Allowlist(name: "Deep work", entries: [obsidian])
+        let chat = Allowlist(name: "Chat", entries: [slack])
+        var rules = FocusRules(allowlists: [deepWork, chat], picked: [deepWork.id, chat.id])
+        rules.deleteAllowlist(deepWork.id)
+        XCTAssertEqual(rules.allowlists, [chat])
+        XCTAssertEqual(rules.picked, [chat.id])
+        XCTAssertEqual(rules.allowed, [slack])
+    }
+
+    func testMigrationMovesOwnAppsIntoAPickedList() {
+        let rules = FocusRules.migrated(apps: [obsidian, todoist])
+        XCTAssertEqual(rules.allowlists.map(\.name), ["Deep work"])
+        XCTAssertEqual(rules.picked, Set(rules.allowlists.map(\.id)))
+        XCTAssertEqual(rules.apps, [])
+        XCTAssertEqual(rules.allowed, [obsidian, todoist])
+        XCTAssertEqual(FocusRules.migrated(apps: []), FocusRules(), "Nothing to move, no list")
+    }
+
+    func testAddSkipsAppsAlreadyIn() {
+        var apps = [obsidian]
+        apps.add([todoist, obsidian, todoist])
+        XCTAssertEqual(apps, [obsidian, todoist])
     }
 
     func testMinuteCountdownRoundsUp() {

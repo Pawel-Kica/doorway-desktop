@@ -1,6 +1,6 @@
 import Foundation
 
-/// A named list of apps, e.g. "Messengers". Sessions point at blocklists, never at entries.
+/// A named list of apps, e.g. "Messengers". Sessions point at blocklists, never at entries. Allowlists share the type.
 public struct Blocklist: Codable, Identifiable, Hashable {
     public var id: UUID
     public var name: String
@@ -202,7 +202,8 @@ public struct Rules: Equatable {
     }
 }
 
-private func unique(_ entries: [GatedApp]) -> [GatedApp] {
+/// Apps unique by bundle ID, the first one wins.
+func unique(_ entries: [GatedApp]) -> [GatedApp] {
     var seen = Set<String>()
     return entries.filter { seen.insert($0.bundleId).inserted }
 }

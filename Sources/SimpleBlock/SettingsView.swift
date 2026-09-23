@@ -2,7 +2,8 @@ import SimpleBlockCore
 import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case focus = "Focus", music = "Music", sessions = "Sessions", blocklists = "Blocklists", general = "General", history = "History"
+    case focus = "Focus", music = "Music", sessions = "Sessions", blocklists = "Blocklists", allowlists = "Allowlists",
+         general = "General", history = "History"
     var id: Self { self }
     var symbol: String {
         switch self {
@@ -10,13 +11,15 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .music: "music.note"
         case .sessions: "calendar"
         case .blocklists: "list.bullet.rectangle"
+        case .allowlists: "checklist"
         case .general: "gearshape"
         case .history: "clock"
         }
     }
 }
 
-/// Settings window: sidebar with Focus, Music, Sessions, Blocklists, General, History, drawn at the `uiScale` size.
+/// Settings window: sidebar with Focus, Music, Sessions, Blocklists, Allowlists, General, History, drawn at the
+/// `uiScale` size.
 /// ⌘+, ⌘− and ⌘0 change the size while it's open. The window can't be resized, it's 960 x 680 times the scale.
 struct SettingsView: View {
     @ObservedObject var model: AppModel
@@ -33,13 +36,21 @@ struct SettingsView: View {
                     .tag(tab)
             }
             .navigationSplitViewColumnWidth(210 * scale)
+            // Collapsing the sidebar left no way back in a window without a toolbar row.
+            .toolbar(removing: .sidebarToggle)
         } detail: {
             Group {
                 switch model.settingsTab {
                 case .focus: FocusPane(model: model)
                 case .music: MusicPane()
                 case .sessions: SessionsPane(model: model)
-                case .blocklists: BlocklistsPane(model: model)
+                case .blocklists:
+                    ListsPane(model: model, noun: "Blocklist", example: "Messengers", lists: $model.rules.blocklists,
+                              frozen: model.isFrozen(list:), delete: { model.rules.deleteBlocklist($0) })
+                case .allowlists:
+                    ListsPane(model: model, noun: "Allowlist", example: "Deep work", lists: $model.focusRules.allowlists,
+                              allows: { lists in model.canChangeFocus { $0.allowlists = lists } },
+                              delete: { model.focusRules.deleteAllowlist($0) })
                 case .general: GeneralPane(model: model)
                 case .history: HistoryPane(model: model)
                 }
@@ -565,21 +576,32 @@ private struct GeneralPane: View {
     }
 }
 
-private struct BlocklistsPane: View {
+/// The Blocklists and Allowlists tabs, same UI: a section per list with rename and delete in its title, its apps with
+/// rename and remove, Add app… under each list, Add blocklist… (or allowlist) at the bottom.
+private struct ListsPane: View {
     @ObservedObject var model: AppModel
+    /// "Blocklist" or "Allowlist".
+    let noun: String
+    /// A name suggested when adding one.
+    let example: String
+    @Binding var lists: [Blocklist]
+    /// Lists a super-locked session uses right now: they keep their apps and can't be deleted. Blocklists only.
+    var frozen: (UUID) -> Bool = { _ in false }
+    /// Whether the lists may lose an app or a list, given how they'd look after. Allowlists: focus keeps an app.
+    var allows: ([Blocklist]) -> Bool = { _ in true }
+    let delete: (UUID) -> Void
     @Environment(\.uiScale) private var scale
-    /// The blocklist whose title is being renamed in place.
+    /// The list whose title is being renamed in place.
     @State private var renamingList: UUID?
-    /// The app entry being renamed in place, with its blocklist.
+    /// The app entry being renamed in place, with its list.
     @State private var renamingApp: (list: UUID, app: String)?
     @State private var adding = false
     @State private var newName = ""
 
     var body: some View {
         Pane {
-            ForEach($model.rules.blocklists) { $list in
-                // A list a super-locked session uses right now keeps its apps and can't be deleted.
-                let frozen = model.isFrozen(list: list.id)
+            ForEach($lists) { $list in
+                let isFrozen = frozen(list.id)
                 if renamingList == list.id {
                     NameField(name: list.name) { typed in
                         if let typed = typed?.trimmingCharacters(in: .whitespacesAndNewlines), !typed.isEmpty { list.name = typed }
@@ -589,15 +611,15 @@ private struct BlocklistsPane: View {
                     .padding(.top, 8 * scale)
                 } else {
                 SectionTitle(title: list.name) {
-                    if frozen {
+                    if isFrozen {
                         Label("Frozen while super locked", systemImage: "lock.fill")
                             .noteFont().foregroundStyle(.red).padding(.trailing, 10 * scale)
                     }
                     // Same spacing as the row buttons, so the icons line up in columns.
                     HStack(spacing: 14 * scale) {
-                        IconButton(symbol: "pencil", help: "Rename blocklist") { renamingList = list.id }
-                        IconButton(symbol: "trash", help: "Delete blocklist") { model.rules.deleteBlocklist(list.id) }
-                            .disabled(frozen)
+                        IconButton(symbol: "pencil", help: "Rename \(noun.lowercased())") { renamingList = list.id }
+                        IconButton(symbol: "trash", help: "Delete \(noun.lowercased())") { delete(list.id) }
+                            .disabled(isFrozen || !allows(lists.filter { $0.id != list.id }))
                     }
                     .padding(.trailing, 14 * scale)
                 }
@@ -621,7 +643,7 @@ private struct BlocklistsPane: View {
                                 Spacer()
                                 IconButton(symbol: "pencil", help: "Rename") { renamingApp = (list.id, app.id) }
                                 IconButton(symbol: "minus.circle", help: "Remove from \(list.name)") { list.entries.removeAll { $0.id == app.id } }
-                                    .disabled(frozen)
+                                    .disabled(isFrozen || !allows(without(app.id, in: list.id)))
                             }
                             .padding(.vertical, -4 * scale)
                         }
@@ -629,30 +651,44 @@ private struct BlocklistsPane: View {
                 }
                 HStack {
                     Spacer()
-                    Button { model.addApps(to: list.id) } label: { Text("Add app…").bezelPadding() }
+                    Button { addApps(to: list.id) } label: { Text("Add app…").bezelPadding() }
                 }
                 .padding(.bottom, 12 * scale)
             }
-            if model.rules.blocklists.isEmpty {
-                Card { CardRow(divider: false) { Text("No blocklists").foregroundStyle(.secondary) } }
+            if lists.isEmpty {
+                Card { CardRow(divider: false) { Text("No \(noun.lowercased())s").foregroundStyle(.secondary) } }
             }
             HStack {
                 Spacer()
-                Button { newName = ""; adding = true } label: { Text("Add blocklist…").bezelPadding() }
+                Button { newName = ""; adding = true } label: { Text("Add \(noun.lowercased())…").bezelPadding() }
             }
         }
-        .navigationTitle("Blocklists")
-        .alert("Add blocklist", isPresented: $adding) {
-            TextField("Name, e.g. Messengers", text: $newName)
-            Button("Add") { addBlocklist() }
+        .navigationTitle("\(noun)s")
+        .alert("Add \(noun.lowercased())", isPresented: $adding) {
+            TextField("Name, e.g. \(example)", text: $newName)
+            Button("Add") { addList() }
             Button("Cancel", role: .cancel) {}
         }
     }
 
-    /// An empty name makes "Blocklist".
-    private func addBlocklist() {
+    /// The lists with one app taken out of one list.
+    private func without(_ app: String, in list: UUID) -> [Blocklist] {
+        var after = lists
+        for i in after.indices where after[i].id == list { after[i].entries.removeAll { $0.id == app } }
+        return after
+    }
+
+    /// Adds apps picked in /Applications. Looked up by ID after the open panel, the list may be gone by then.
+    private func addApps(to id: UUID) {
+        let picked = model.pickApps()
+        guard let index = lists.firstIndex(where: { $0.id == id }) else { return }
+        lists[index].entries.add(picked)
+    }
+
+    /// An empty name makes "Blocklist" (or "Allowlist").
+    private func addList() {
         let typed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        model.rules.blocklists.append(Blocklist(name: typed.isEmpty ? "Blocklist" : typed))
+        lists.append(Blocklist(name: typed.isEmpty ? noun : typed))
     }
 }
 
