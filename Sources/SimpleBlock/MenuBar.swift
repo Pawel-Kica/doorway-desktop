@@ -20,7 +20,7 @@ struct MenuBarLabel: View {
 }
 
 /// The menu bar popover: what gates now, gated apps with timers, quick sessions, focus, Start session, Start focus,
-/// music, today's count, Settings, Quit. Drawn at the `uiScale` size, like Settings.
+/// music, Focus screen, today's count, Settings, Quit. Drawn at the `uiScale` size, like Settings.
 struct PopoverView: View {
     @ObservedObject var model: AppModel
     @AppStorage(UIScale.key) private var scale = UIScale.standard
@@ -111,6 +111,10 @@ struct PopoverView: View {
                 MusicControl(music: Music.shared, scale: scale)
             }
             .padding(.horizontal, 10 * scale).padding(.vertical, 6 * scale)
+            PopoverRow(symbol: "rectangle.on.rectangle", title: "Focus screen") {
+                dismiss()
+                FocusScreen.shared.show()
+            }
             PopoverRow(symbol: "list.bullet", title: "Today's reasons",
                        trailing: "\(reasonsToday(model.entries, now: model.now))") { open(.history) }
             PopoverRow(symbol: "gearshape", title: "Settings…") { open(.sessions) }
