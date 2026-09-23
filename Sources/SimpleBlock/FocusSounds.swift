@@ -12,6 +12,9 @@ struct FocusSound: Identifiable, Equatable {
     let category: Category
     let source: Source
 
+    /// For the error text: a stream can be unreachable, noise can only fail to start.
+    var isStream: Bool { if case .stream = source { true } else { false } }
+
     /// The catalog, in menu order. Streams are HTTPS (no ATS exceptions), checked to play on 2026-09-23.
     static let all: [FocusSound] = [
         stream("chillhop", "Chillhop", .lofi, "https://streams.fluxfm.de/Chillhop/mp3-128/audio/"),
@@ -91,7 +94,7 @@ private struct NoiseChannel {
 
     @Published private(set) var sound: FocusSound
     @Published private(set) var isPlaying = false
-    /// The stream failed or dropped. Shows "Can't reach this stream", the next play clears it.
+    /// The stream failed or dropped, or the noise couldn't start. Shows an error, the next play clears it.
     @Published private(set) var failed = false
     /// The slider, 0...1. Gain is its square, which feels more even than linear.
     @Published var volume: Double {
@@ -136,7 +139,7 @@ private struct NoiseChannel {
                 center.publisher(for: AVPlayerItem.failedToPlayToEndTimeNotification, object: item).map { _ in () },
                 center.publisher(for: AVPlayerItem.didPlayToEndTimeNotification, object: item).map { _ in () })
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] in self?.streamFailed() }
+                .sink { [weak self] in self?.fail() }
         case .noise(let noise):
             engine = noise.engine()
             // The engine stops when the output device changes (AirPods connect), so start over on the new one.
@@ -146,7 +149,7 @@ private struct NoiseChannel {
         }
         applyVolume()
         player?.play()
-        if let engine, (try? engine.start()) == nil { pause() }
+        if let engine, (try? engine.start()) == nil { fail() }
     }
 
     /// Stops playback and drops the player.
@@ -159,7 +162,7 @@ private struct NoiseChannel {
         isPlaying ? pause() : play()
     }
 
-    private func streamFailed() {
+    private func fail() {
         pause()
         failed = true
     }
@@ -231,7 +234,7 @@ struct FocusSoundsControl: View {
             }
 
             if sounds.failed {
-                Text("Can't reach this stream")
+                Text(sounds.sound.isStream ? "Can't reach this stream" : "Can't play the noise")
                     .font(.system(size: 13 * scale))
                     .foregroundStyle(.red)
             }

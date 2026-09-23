@@ -331,8 +331,9 @@ private struct TopApps: View {
                 ForEach(apps, id: \.bundleId) { app in
                     HStack(spacing: 10 * scale) {
                         icon(app.bundleId)
+                        // Wide enough for "Google Chrome" and "Visual Studio Code"; 96 cut them short.
                         Text(app.app).font(.system(size: 15 * scale)).lineLimit(1)
-                            .frame(width: 96 * scale, alignment: .leading)
+                            .frame(width: 132 * scale, alignment: .leading)
                         GeometryReader { geometry in
                             let label = 34 * scale
                             HStack(spacing: 8 * scale) {

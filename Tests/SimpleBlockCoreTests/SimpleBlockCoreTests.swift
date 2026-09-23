@@ -380,6 +380,20 @@ final class SessionRowTests: XCTestCase {
         XCTAssertEqual(timeLeft(51 * 3600), "2 d 3 h")
     }
 
+    func testParseClock() {
+        XCTAssertEqual(parseClock("18:00"), 18 * 60)
+        XCTAssertEqual(parseClock(" 8:05 "), 8 * 60 + 5)
+        XCTAssertEqual(parseClock("18.30"), 18 * 60 + 30)
+        XCTAssertEqual(parseClock("9"), 9 * 60)
+        XCTAssertEqual(parseClock("0:00"), 0)
+        XCTAssertEqual(parseClock("23:59"), 23 * 60 + 59)
+        for typed in ["19:3", "19:", "24:00", "12:60", "", "ab", "1:2:3", "-1:00", "+8:00", "123", "8:05 PM"] {
+            XCTAssertNil(parseClock(typed), typed)
+        }
+        XCTAssertEqual(clockText(8 * 60 + 5), "08:05")
+        XCTAssertEqual(parseClock(clockText(19 * 60 + 30)), 19 * 60 + 30)
+    }
+
     func testStatus() {
         let night = ScheduledSession(blocklists: [messengers], schedule: Schedule(from: 18 * 60, to: 10 * 60), superLock: true)
         XCTAssertEqual(night.status(at: date(20), calendar: utc), .on(until: date(day: 15, 10)))

@@ -16,13 +16,13 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 }
 
 /// Settings window: sidebar with Focus, Sessions, Blocklists, General, History, drawn at the `uiScale` size.
-/// ⌘+, ⌘− and ⌘0 change the size while it's open.
+/// ⌘+, ⌘− and ⌘0 change the size while it's open. The window can't be resized, it's 960 x 680 times the scale.
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     @AppStorage(UIScale.key) private var scale = UIScale.standard
 
     var body: some View {
-        let minSize = UIScale.size(960, 680, scale: scale)
+        let size = UIScale.size(960, 680, scale: scale)
         NavigationSplitView {
             List(SettingsTab.allCases, selection: Binding(get: { model.settingsTab }, set: { if let tab = $0 { model.settingsTab = tab } })) { tab in
                 Label(tab.rawValue, systemImage: tab.symbol)
@@ -45,9 +45,12 @@ struct SettingsView: View {
             .scaledFont(15)
             .controlSize(UIScale.controlSize(scale))
         }
-        .frame(minWidth: minSize.width, minHeight: minSize.height)
+        // An exact size rather than a minimum: the window isn't resizable, so it shrinks back only this way.
+        .frame(width: size.width, height: size.height)
         .background { SizeShortcuts(scale: $scale) }
         .environment(\.uiScale, scale)
+        // The window grows from its top left corner, which can push its bottom off the screen.
+        .onChange(of: scale) { DispatchQueue.main.async { NSApp.keyWindow?.keepOnScreen() } }
     }
 }
 
@@ -245,11 +248,12 @@ private struct SessionsPane: View {
         .navigationTitle("Sessions")
     }
 
-    /// Weekdays 8:00-19:00 on every blocklist, opened to edit.
+    /// Weekdays 8:00-19:00 on every blocklist, opened to edit. First in the list, right under the button:
+    /// at the end it landed below the fold once a session was open.
     private func addSession() {
         let session = ScheduledSession(blocklists: Set(model.rules.blocklists.map(\.id)),
                                        schedule: Schedule(days: Set(2...6), from: 8 * 60, to: 19 * 60))
-        model.rules.sessions.append(session)
+        model.rules.sessions.insert(session, at: 0)
         open.insert(session.id)
     }
 }
@@ -405,9 +409,9 @@ private struct SessionEditor: View {
                 CardRow {
                     SettingRow(title: "Time") {
                         HStack(spacing: 10 * scale) {
-                            TimeField(minutes: $session.schedule.from)
+                            TimeField(minutes: session.schedule.from) { [id = session.id] in setTime(\.from, $0, of: id) }
                             Text("to").foregroundStyle(.secondary)
-                            TimeField(minutes: $session.schedule.to)
+                            TimeField(minutes: session.schedule.to) { [id = session.id] in setTime(\.to, $0, of: id) }
                         }
                     }
                 }
@@ -451,25 +455,47 @@ private struct SessionEditor: View {
         }
         .padding(.leading, 28 * scale)
     }
+
+    /// Saves a typed time by session ID, not through the binding: a field also saves as it goes away,
+    /// which can be right after its session was deleted.
+    private func setTime(_ end: WritableKeyPath<Schedule, Int>, _ minutes: Int, of id: UUID) {
+        guard let index = model.rules.sessions.firstIndex(where: { $0.id == id }) else { return }
+        model.rules.sessions[index].schedule[keyPath: end] = minutes
+    }
 }
 
-/// A time of day as a text field ("18:00"): unlike DatePicker it grows with the UI scale. Enter or leaving it saves,
-/// anything that isn't a time goes back to the old value.
+/// A time of day as a text field ("18:00"): unlike DatePicker it grows with the UI scale. Enter, leaving the field or
+/// it going away (fold, other tab) saves; anything that isn't a time goes back to the old value. Saving while typing
+/// stored half-typed times ("19:3" as 19:03) and could switch a super lock on, freezing the session, mid-edit.
 private struct TimeField: View {
     /// Minutes since midnight.
-    @Binding var minutes: Int
+    let minutes: Int
+    /// Gets the typed minutes when they differ.
+    let save: (Int) -> Void
+    @State private var text = ""
+    @FocusState private var focused: Bool
     @Environment(\.uiScale) private var scale
 
     var body: some View {
-        TextField("Time", value: Binding(
-            get: { Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: Date())! },
-            set: { date in
-                let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
-                minutes = parts.hour! * 60 + parts.minute!
-            }), format: .dateTime.hour().minute())
+        TextField("Time", text: $text)
+            .focused($focused)
+            .onSubmit(commit)
+            .onChange(of: focused) { if !focused { commit() } }
+            .onDisappear(perform: commit)
+            .onAppear { text = clockText(minutes) }
+            .onChange(of: minutes) { text = clockText(minutes) }
             .monospacedDigit()
             .multilineTextAlignment(.center)
             .frame(width: 76 * scale)
+    }
+
+    private func commit() {
+        guard let typed = parseClock(text) else {
+            text = clockText(minutes)
+            return
+        }
+        text = clockText(typed)
+        if typed != minutes { save(typed) }
     }
 }
 
@@ -483,13 +509,14 @@ private struct GeneralPane: View {
                 CardRow(divider: false) {
                     SettingRow(title: "Time per reason",
                                note: "Fixed from the moment you give a reason. When it ends, the app hides and asks again.") {
-                        // Buttons instead of a Stepper, which doesn't grow with the scale.
+                        // Buttons instead of a Stepper, which doesn't grow with the scale. The symbols go in a Text
+                        // so both get a full line's height; a bare minus made a shorter button than the plus.
                         HStack(spacing: 8 * scale) {
-                            Button { model.minutesPerReason -= 1 } label: { Image(systemName: "minus").bezelPadding() }
+                            Button { model.minutesPerReason -= 1 } label: { Text(Image(systemName: "minus")).bezelPadding() }
                                 .disabled(model.minutesPerReason <= 1)
                                 .accessibilityLabel("Less time")
                             Text("\(model.minutesPerReason) min").monospacedDigit().frame(minWidth: 64 * scale)
-                            Button { model.minutesPerReason += 1 } label: { Image(systemName: "plus").bezelPadding() }
+                            Button { model.minutesPerReason += 1 } label: { Text(Image(systemName: "plus")).bezelPadding() }
                                 .disabled(model.minutesPerReason >= 120)
                                 .accessibilityLabel("More time")
                         }

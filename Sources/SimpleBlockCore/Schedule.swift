@@ -85,3 +85,19 @@ public func timeLeft(_ seconds: TimeInterval) -> String {
     let hours = minutes % (24 * 60) / 60
     return hours == 0 ? "\(minutes / (24 * 60)) d" : "\(minutes / (24 * 60)) d \(hours) h"
 }
+
+/// "08:05" for minutes since midnight, the way the time fields in Settings show it.
+public func clockText(_ minutes: Int) -> String {
+    String(format: "%02d:%02d", minutes / 60, minutes % 60)
+}
+
+/// Minutes since midnight from a typed time: "18:00", "8:05", "18.30" or a bare hour like "9". Nil for anything else,
+/// including a one digit minute ("19:3"), which is more likely half typed than meant.
+public func parseClock(_ text: String) -> Int? {
+    let parts = text.trimmingCharacters(in: .whitespaces).split(omittingEmptySubsequences: false) { $0 == ":" || $0 == "." }
+    guard (1...2).contains(parts.count), parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber } }),
+          parts[0].count <= 2, let hour = Int(parts[0]), hour < 24 else { return nil }
+    guard parts.count == 2 else { return hour * 60 }
+    guard parts[1].count == 2, let minute = Int(parts[1]), minute < 60 else { return nil }
+    return hour * 60 + minute
+}

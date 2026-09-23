@@ -29,6 +29,17 @@ enum UIScale {
     }
 }
 
+extension NSWindow {
+    /// Moves the window back inside the visible part of its screen. Too big to fit, its top left corner stays on screen.
+    func keepOnScreen() {
+        guard let visible = screen?.visibleFrame else { return }
+        var frame = frame
+        frame.origin.x = max(visible.minX, min(frame.minX, visible.maxX - frame.width))
+        frame.origin.y = min(visible.maxY - frame.height, max(frame.minY, visible.minY))
+        if frame != self.frame { setFrameOrigin(frame.origin) }
+    }
+}
+
 private struct UIScaleKey: EnvironmentKey {
     static let defaultValue = UIScale.standard
 }

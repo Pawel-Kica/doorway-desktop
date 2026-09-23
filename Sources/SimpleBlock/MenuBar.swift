@@ -119,6 +119,7 @@ struct PopoverView: View {
         .controlSize(UIScale.controlSize(scale))
         .padding(14 * scale)
         .frame(width: 360 * scale)
+        .background { GeometryReader { FitWindow(size: $0.size) } }
         .environment(\.uiScale, scale)
     }
 
@@ -142,6 +143,24 @@ struct PopoverView: View {
         dismiss()
         openSettings()
         NSApp.activate()
+    }
+}
+
+/// Keeps the popover window the size of its content, top edge in place. MenuBarExtra grows its window but never
+/// shrinks it, so after a smaller UI scale the popover floated in the middle of a much bigger empty window.
+private struct FitWindow: NSViewRepresentable {
+    let size: CGSize
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            let content = window.contentRect(forFrameRect: window.frame)
+            guard abs(content.width - size.width) > 0.5 || abs(content.height - size.height) > 0.5 else { return }
+            let fitted = NSRect(x: content.minX, y: content.maxY - size.height, width: size.width, height: size.height)
+            window.setFrame(window.frameRect(forContentRect: fitted), display: true)
+        }
     }
 }
 

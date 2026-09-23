@@ -26,7 +26,7 @@ struct FocusPane: View {
                     } else {
                         FlowLayout(spacing: 8 * scale) {
                             ForEach(model.focusApps) { app in
-                                AppChip(app: app) { model.removeFocusApp(app.bundleId) }
+                                AppChip(app: app, removable: model.canRemoveFocusApp) { model.removeFocusApp(app.bundleId) }
                             }
                         }
                     }
@@ -107,9 +107,10 @@ struct FocusPane: View {
     }
 }
 
-/// An allowed app as a chip: icon, name and a remove x.
+/// An allowed app as a chip: icon, name and a remove x, disabled on the last app while focus is on.
 private struct AppChip: View {
     let app: GatedApp
+    let removable: Bool
     let remove: () -> Void
     @Environment(\.uiScale) private var scale
 
@@ -122,7 +123,8 @@ private struct AppChip: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
-            .help("Remove \(app.name)")
+            .disabled(!removable)
+            .help(removable ? "Remove \(app.name)" : "Focus needs at least one app")
             .accessibilityLabel("Remove \(app.name)")
         }
         .padding(.leading, 7 * scale).padding(.trailing, 9 * scale).padding(.vertical, 5 * scale)

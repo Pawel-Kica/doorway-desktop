@@ -159,7 +159,11 @@ final class AppModel: ObservableObject {
         if !focusApps.contains(where: { $0.bundleId == app.bundleId }) { focusApps.append(app) }
     }
 
+    /// Removing the last app during a focus would hide everything but Finder, so it stays until focus ends.
+    var canRemoveFocusApp: Bool { focusLeft == 0 || focusApps.count > 1 }
+
     func removeFocusApp(_ bundleId: String) {
+        guard canRemoveFocusApp else { return }
         focusApps.removeAll { $0.bundleId == bundleId }
     }
 

@@ -87,7 +87,8 @@ final class Gatekeeper {
         }
     }
 
-    /// Focus only ever hides regular apps: menu bar and background ones like Raycast's launcher are left alone.
+    /// Focus only hides apps with the regular activation policy (a Dock icon). Accessory and background ones like
+    /// Raycast are left alone, but a menu bar app that's also in the Dock, like Wispr Flow, is regular and gets hidden.
     private func focusHides(_ app: NSRunningApplication, now: Date) -> Bool {
         guard app.activationPolicy == .regular, let focus = model.focus else { return false }
         return focus.hides(app.bundleIdentifier, allowed: model.focusApps, at: now)
@@ -105,9 +106,12 @@ final class Gatekeeper {
                    title: "\(name) is hidden while you focus", subtitle: "\(model.focusNames) · \(countdown(left)) left")
     }
 
-    /// Focus starting: hide every running regular app outside it, then open the first focus app so it lands in front.
+    /// Focus starting: close a prompt it makes pointless, hide every running regular app outside it, then open the
+    /// first focus app so it lands in front.
     /// Called before `model.focus` changes, so it gets the new session.
     private func startFocus(_ session: FocusSession) {
+        // A reason prompt for an app this focus hides has nothing left to ask. It closes quietly, no `cancelled` line.
+        if let id = prompt.bundleId, session.hides(id, allowed: model.focusApps, at: Date()) { prompt.close() }
         hideAll(outside: session)
         guard let first = model.focusApps.first else { return }
         // activate() on another app gets refused from the background. Launch Services brings it forward.
