@@ -2,6 +2,27 @@ import AppKit
 import SimpleBlockCore
 import SwiftUI
 
+/// What brought the prompt up.
+enum Trigger {
+    case launch, `switch`, expired
+
+    var kind: LogKind {
+        switch self {
+        case .launch: .launch
+        case .switch: .switch
+        case .expired: .expired
+        }
+    }
+
+    func question(_ app: String) -> String {
+        switch self {
+        case .launch: "Why are you opening \(app)?"
+        case .switch: "Why are you switching to \(app)?"
+        case .expired: "Time's up. Why stay in \(app)?"
+        }
+    }
+}
+
 /// Borderless panels can't take keyboard focus unless told they can.
 private final class PromptPanel: NSPanel {
     override var canBecomeKey: Bool { true }

@@ -1,6 +1,19 @@
 import SimpleBlockCore
 import SwiftUI
 
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case sessions = "Sessions", blocklists = "Blocklists", general = "General", history = "History"
+    var id: Self { self }
+    var symbol: String {
+        switch self {
+        case .sessions: "calendar"
+        case .blocklists: "list.bullet.rectangle"
+        case .general: "gearshape"
+        case .history: "clock"
+        }
+    }
+}
+
 /// Settings window: sidebar with Sessions, Blocklists, General, History.
 struct SettingsView: View {
     @ObservedObject var model: AppModel
@@ -83,27 +96,27 @@ private struct SessionsPane: View {
 
     var body: some View {
         Form {
-            ForEach($model.sessions) { $session in
+            ForEach($model.rules.sessions) { $session in
                 // A super-locked session that's on now is frozen: nothing about it can change until it ends.
                 let frozen = model.isFrozen(session)
                 Section {
                     SessionRows(model: model, session: $session)
                 } header: {
-                    SectionTitle(title: model.names(session.blocklists)) {
+                    SectionTitle(title: model.rules.names(session.blocklists)) {
                         if frozen {
                             Label("Frozen while super locked", systemImage: "lock.fill")
                                 .font(.note).foregroundStyle(.red).padding(.trailing, 10)
                         }
                         Toggle("Enabled", isOn: $session.enabled).toggleStyle(.switch).labelsHidden()
                             .padding(.trailing, 6)
-                        IconButton(symbol: "trash", help: "Delete session") { model.sessions.removeAll { $0.id == session.id } }
+                        IconButton(symbol: "trash", help: "Delete session") { model.rules.sessions.removeAll { $0.id == session.id } }
                     }
                     .disabled(frozen)
                 }
                 .disabled(frozen)
             }
             Section {
-                if model.sessions.isEmpty {
+                if model.rules.sessions.isEmpty {
                     Text("No sessions").foregroundStyle(.secondary)
                 }
             } footer: {
@@ -113,17 +126,17 @@ private struct SessionsPane: View {
                     Spacer()
                     Button("Add session") {
                         // Weekdays 8:00-19:00 on every blocklist.
-                        model.sessions.append(ScheduledSession(blocklists: Set(model.blocklists.map(\.id)),
-                                                               schedule: Schedule(days: [2, 3, 4, 5, 6], from: 8 * 60, to: 19 * 60)))
+                        model.rules.sessions.append(ScheduledSession(blocklists: Set(model.rules.blocklists.map(\.id)),
+                                                                     schedule: Schedule(days: [2, 3, 4, 5, 6], from: 8 * 60, to: 19 * 60)))
                     }
                 }
             }
-            if !model.quickSessions.isEmpty {
+            if !model.rules.quickSessions.isEmpty {
                 Section {
-                    ForEach(model.quickSessions) { quick in
+                    ForEach(model.rules.quickSessions) { quick in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(model.names(quick.blocklists))
+                                Text(model.rules.names(quick.blocklists))
                                 Text("\(countdown(quick.ends.timeIntervalSince(model.now))) left")
                                     .font(.note).monospacedDigit().foregroundStyle(.secondary)
                             }
@@ -171,8 +184,8 @@ private struct SessionRows: View {
         }
         LabeledContent("Blocklists") {
             HStack {
-                if model.blocklists.isEmpty { Text("No blocklists").foregroundStyle(.secondary) }
-                ForEach(model.blocklists) { list in
+                if model.rules.blocklists.isEmpty { Text("No blocklists").foregroundStyle(.secondary) }
+                ForEach(model.rules.blocklists) { list in
                     Toggle(list.name, isOn: Binding(
                         get: { session.blocklists.contains(list.id) },
                         set: { on in
@@ -244,7 +257,7 @@ private struct BlocklistsPane: View {
 
     var body: some View {
         Form {
-            ForEach($model.blocklists) { $list in
+            ForEach($model.rules.blocklists) { $list in
                 // A list a super-locked session uses right now keeps its apps and can't be deleted.
                 let frozen = model.isFrozen(list: list.id)
                 Section {
@@ -271,7 +284,7 @@ private struct BlocklistsPane: View {
                         // Same spacing as the row buttons, so the icons line up in columns.
                         HStack(spacing: 14) {
                             IconButton(symbol: "pencil", help: "Rename blocklist") { startNaming(list) }
-                            IconButton(symbol: "trash", help: "Delete blocklist") { model.deleteBlocklist(list.id) }
+                            IconButton(symbol: "trash", help: "Delete blocklist") { model.rules.deleteBlocklist(list.id) }
                                 .disabled(frozen)
                         }
                     }
@@ -283,7 +296,7 @@ private struct BlocklistsPane: View {
                 }
             }
             Section {
-                if model.blocklists.isEmpty {
+                if model.rules.blocklists.isEmpty {
                     Text("No blocklists").foregroundStyle(.secondary)
                 }
             } footer: {
@@ -316,8 +329,8 @@ private struct BlocklistsPane: View {
     }
 
     private func save() {
-        guard let editing, let index = model.blocklists.firstIndex(where: { $0.id == target }) else { return }
-        model.blocklists[index].entries.rename(id: editing.id, to: name)
+        guard let editing, let index = model.rules.blocklists.firstIndex(where: { $0.id == target }) else { return }
+        model.rules.blocklists[index].entries.rename(id: editing.id, to: name)
     }
 
     /// Opens the name alert for a new blocklist (nil) or a rename.
@@ -331,10 +344,10 @@ private struct BlocklistsPane: View {
     private func saveName() {
         let typed = listName.trimmingCharacters(in: .whitespacesAndNewlines)
         if let renaming {
-            guard !typed.isEmpty, let index = model.blocklists.firstIndex(where: { $0.id == renaming.id }) else { return }
-            model.blocklists[index].name = typed
+            guard !typed.isEmpty, let index = model.rules.blocklists.firstIndex(where: { $0.id == renaming.id }) else { return }
+            model.rules.blocklists[index].name = typed
         } else {
-            model.blocklists.append(Blocklist(name: typed.isEmpty ? "Blocklist" : typed))
+            model.rules.blocklists.append(Blocklist(name: typed.isEmpty ? "Blocklist" : typed))
         }
     }
 }
@@ -354,7 +367,7 @@ private struct HistoryPane: View {
     }
 
     var body: some View {
-        let known = model.everyEntry
+        let known = model.rules.everyEntry
         let days = days()
         VStack(alignment: .leading, spacing: 16) {
             HStack {

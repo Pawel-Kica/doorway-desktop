@@ -8,7 +8,7 @@ struct MenuBarLabel: View {
     var body: some View {
         Image(systemName: "hand.raised.fill")
         if let running = model.timers.soonest(now: model.now),
-           let app = model.everyEntry.first(where: { $0.bundleId == running.bundleId }) {
+           let app = model.rules.entry(running.bundleId) {
             Text("\(app.name) \(countdown(running.remaining))")
         }
     }
@@ -21,7 +21,7 @@ struct PopoverView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        let gated = model.gated(at: model.now)
+        let gated = model.rules.gated(at: model.now)
         let status = status()
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -40,7 +40,7 @@ struct PopoverView: View {
                 Text("Nothing gated now").foregroundStyle(.secondary).padding(10)
             }
             // A running timer shows its countdown, a super lock says when it ends, everything else a lock: it asks for a reason.
-            let superLocked = model.superLocked(at: model.now).map(\.bundleId)
+            let superLocked = model.rules.superLocked(at: model.now).map(\.bundleId)
             ForEach(gated) { app in
                 let left = model.timers.remaining(app.bundleId, now: model.now)
                 HStack(spacing: 12) {
@@ -61,11 +61,11 @@ struct PopoverView: View {
             }
 
             Divider().padding(.vertical, 8)
-            ForEach(model.quickSessions) { quick in
+            ForEach(model.rules.quickSessions) { quick in
                 HStack(spacing: 12) {
                     PopoverSymbol(symbol: "timer")
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(model.names(quick.blocklists)).lineLimit(1)
+                        Text(model.rules.names(quick.blocklists)).lineLimit(1)
                         Text("\(countdown(quick.ends.timeIntervalSince(model.now))) left")
                             .font(.system(size: 13)).monospacedDigit().foregroundStyle(.secondary)
                     }
@@ -74,7 +74,7 @@ struct PopoverView: View {
                 }
                 .padding(.horizontal, 10).padding(.vertical, 6)
             }
-            if !model.blocklists.isEmpty { StartSessionMenu(model: model) }
+            if !model.rules.blocklists.isEmpty { StartSessionMenu(model: model) }
             PopoverRow(symbol: "list.bullet", title: "Today's reasons",
                        trailing: "\(reasonsToday(model.entries, now: model.now))") { open(.history) }
             PopoverRow(symbol: "gearshape", title: "Settings…") { open(.sessions) }
@@ -87,13 +87,13 @@ struct PopoverView: View {
 
     /// What gates now: a super lock first, then a scheduled session (they're the main thing), else the quick session ending last.
     private func status() -> (text: String, on: Bool) {
-        let active = activeSessions(model.sessions, now: model.now)
+        let active = model.rules.activeSessions(at: model.now)
         if let session = active.first(where: \.superLock) ?? active.first {
             let kind = session.superLock ? "Super lock" : "Session"
             guard let end = session.schedule.end(of: model.now) else { return ("\(kind) on all day", true) }
             return ("\(kind) on until \(end.formatted(date: .omitted, time: .shortened))", true)
         }
-        if let quick = model.quickSessions.filter({ $0.ends > model.now }).max(by: { $0.ends < $1.ends }) {
+        if let quick = model.rules.quickSessions.filter({ $0.ends > model.now }).max(by: { $0.ends < $1.ends }) {
             return ("Quick session, \(countdown(quick.ends.timeIntervalSince(model.now))) left", true)
         }
         return ("No session now", false)
@@ -116,11 +116,11 @@ private struct StartSessionMenu: View {
 
     var body: some View {
         Menu {
-            if model.blocklists.count > 1 {
-                lengthMenu("All blocklists", Set(model.blocklists.map(\.id)))
+            if model.rules.blocklists.count > 1 {
+                lengthMenu("All blocklists", Set(model.rules.blocklists.map(\.id)))
                 Divider()
             }
-            ForEach(model.blocklists) { list in lengthMenu(list.name, [list.id]) }
+            ForEach(model.rules.blocklists) { list in lengthMenu(list.name, [list.id]) }
         } label: {
             PopoverRowLabel(symbol: "play.fill", title: "Start session", trailing: nil, hovering: hovering)
         }

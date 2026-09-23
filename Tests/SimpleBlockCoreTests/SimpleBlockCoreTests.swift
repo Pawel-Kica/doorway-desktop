@@ -113,7 +113,7 @@ final class TimerTests: XCTestCase {
     }
 }
 
-final class SessionTests: XCTestCase {
+final class RulesTests: XCTestCase {
     private let signal = GatedApp(bundleId: "org.whispersystems.signal-desktop", name: "Signal", path: "/Applications/Signal.app")
     private let whatsapp = GatedApp(bundleId: "net.whatsapp.WhatsApp", name: "WhatsApp", path: "/Applications/WhatsApp.app")
     private let gmail = GatedApp(bundleId: "com.google.Gmail", name: "Gmail", path: "/Applications/Gmail.app")
@@ -121,8 +121,12 @@ final class SessionTests: XCTestCase {
     private lazy var messengers = Blocklist(name: "Messengers", entries: [signal, whatsapp])
     private lazy var mail = Blocklist(name: "Mail", entries: [gmail, signal])
 
+    private func rules(_ sessions: [ScheduledSession], _ quick: [QuickSession] = []) -> Rules {
+        Rules(blocklists: [messengers, mail], sessions: sessions, quickSessions: quick)
+    }
+
     private func gated(_ sessions: [ScheduledSession], _ quick: [QuickSession] = [], at now: Date) -> [String] {
-        gatedNow([messengers, mail], sessions: sessions, quickSessions: quick, now: now, calendar: utc).map(\.bundleId)
+        rules(sessions, quick).gated(at: now, calendar: utc).map(\.bundleId)
     }
 
     func testOverlappingSessionsGateTheUnionOnce() {
@@ -137,7 +141,7 @@ final class SessionTests: XCTestCase {
     func testDisabledSessionGatesNothing() {
         let off = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(), enabled: false)
         XCTAssertEqual(gated([off], at: date(12)), [])
-        XCTAssertEqual(activeSessions([off], now: date(12), calendar: utc), [])
+        XCTAssertEqual(rules([off]).activeSessions(at: date(12), calendar: utc), [])
     }
 
     func testQuickSessionGatesUntilItEnds() {
@@ -155,25 +159,23 @@ final class SessionTests: XCTestCase {
     func testSuperLockIsASubsetOfGatedAndHasAnEnd() {
         let night = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(days: [2], from: 18 * 60, to: 10 * 60), superLock: true)
         let evening = ScheduledSession(blocklists: [mail.id], schedule: Schedule(days: [2], from: 17 * 60, to: 22 * 60))
-        let locked = superLockedNow([messengers, mail], sessions: [night, evening], now: date(20), calendar: utc).map(\.bundleId)
+        let locked = rules([night, evening]).superLocked(at: date(20), calendar: utc).map(\.bundleId)
         XCTAssertEqual(locked, [signal.bundleId, whatsapp.bundleId])
         XCTAssertEqual(gated([night, evening], at: date(20)), [signal.bundleId, whatsapp.bundleId, gmail.bundleId])
-        XCTAssertEqual(superLockedNow([messengers, mail], sessions: [night, evening], now: date(12), calendar: utc), [])
-        XCTAssertEqual(frozenBlocklists([night, evening], now: date(20), calendar: utc), [messengers.id])
-        XCTAssertEqual(superLockEnd(signal.bundleId, blocklists: [messengers, mail], sessions: [night], now: date(20), calendar: utc),
-                       date(day: 15, 10))
+        XCTAssertEqual(rules([night, evening]).superLocked(at: date(12), calendar: utc), [])
+        XCTAssertEqual(rules([night, evening]).frozenBlocklists(at: date(20), calendar: utc), [messengers.id])
+        XCTAssertEqual(rules([night]).superLockEnd(signal.bundleId, at: date(20), calendar: utc), date(day: 15, 10))
         // Two locks on the same app: the later end wins, and a never-ending one wins over both.
         let late = ScheduledSession(blocklists: [mail.id], schedule: Schedule(days: [2], from: 18 * 60, to: 12 * 60), superLock: true)
-        XCTAssertEqual(superLockEnd(signal.bundleId, blocklists: [messengers, mail], sessions: [night, late], now: date(20), calendar: utc),
-                       date(day: 15, 12))
+        XCTAssertEqual(rules([night, late]).superLockEnd(signal.bundleId, at: date(20), calendar: utc), date(day: 15, 12))
         let always = ScheduledSession(blocklists: [mail.id], schedule: Schedule(), superLock: true)
-        XCTAssertNil(superLockEnd(signal.bundleId, blocklists: [messengers, mail], sessions: [night, always], now: date(20), calendar: utc))
+        XCTAssertNil(rules([night, always]).superLockEnd(signal.bundleId, at: date(20), calendar: utc))
     }
 
     func testDisabledOrOffSuperLockIsNotFrozen() {
         let off = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(), enabled: false, superLock: true)
-        XCTAssertEqual(superLockedSessions([off], now: date(12), calendar: utc), [])
-        XCTAssertEqual(frozenBlocklists([off], now: date(12), calendar: utc), [])
+        XCTAssertEqual(rules([off]).superLockedSessions(at: date(12), calendar: utc), [])
+        XCTAssertEqual(rules([off]).frozenBlocklists(at: date(12), calendar: utc), [])
     }
 
     func testSessionsSavedBeforeSuperLockDecode() throws {
@@ -186,23 +188,52 @@ final class SessionTests: XCTestCase {
     }
 
     func testEveryEntryIsUniqueByBundleId() {
-        XCTAssertEqual(everyEntry(in: [messengers, mail]).map(\.bundleId), [signal.bundleId, whatsapp.bundleId, gmail.bundleId])
+        XCTAssertEqual(rules([]).everyEntry.map(\.bundleId), [signal.bundleId, whatsapp.bundleId, gmail.bundleId])
+        XCTAssertEqual(rules([]).entry(gmail.bundleId), gmail)
+        XCTAssertNil(rules([]).entry("com.apple.Safari"))
+        XCTAssertNil(rules([]).entry(nil))
+    }
+
+    func testNamesFollowSettingsOrder() {
+        XCTAssertEqual(rules([]).names([mail.id, messengers.id]), "Messengers, Mail")
+        XCTAssertEqual(rules([]).names([]), "No blocklist")
+    }
+
+    func testAccess() {
+        let day = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(days: [2], from: 8 * 60, to: 19 * 60))
+        let night = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(days: [2], from: 19 * 60, to: 8 * 60), superLock: true)
+        let rules = rules([day, night])
+        var timers = AppTimers()
+        XCTAssertEqual(rules.access(signal.bundleId, timers: timers, at: date(12), calendar: utc), .ask)
+        XCTAssertEqual(rules.access(gmail.bundleId, timers: timers, at: date(12), calendar: utc), .open, "no session gates Mail")
+        XCTAssertEqual(rules.access("com.apple.Safari", timers: timers, at: date(12), calendar: utc), .open)
+        timers.start(signal.bundleId, minutes: 5, now: date(12))
+        XCTAssertEqual(rules.access(signal.bundleId, timers: timers, at: date(12, 4), calendar: utc), .open, "timer runs")
+        XCTAssertEqual(rules.access(signal.bundleId, timers: timers, at: date(12, 5), calendar: utc), .ask, "timer ran out")
+        timers.start(signal.bundleId, minutes: 5, now: date(20))
+        XCTAssertEqual(rules.access(signal.bundleId, timers: timers, at: date(20), calendar: utc), .lock, "super lock wins over a timer")
     }
 
     func testDeletingBlocklistCleansSessions() {
-        var lists = [messengers, mail]
-        var sessions = [ScheduledSession(blocklists: [messengers.id, mail.id], schedule: Schedule()),
+        let lists = [messengers, mail]
+        let sessions = [ScheduledSession(blocklists: [messengers.id, mail.id], schedule: Schedule()),
                         ScheduledSession(blocklists: [mail.id], schedule: Schedule())]
-        var quick = [QuickSession(blocklists: [mail.id], ends: date(15)),
+        let quick = [QuickSession(blocklists: [mail.id], ends: date(15)),
                      QuickSession(blocklists: [mail.id, messengers.id], ends: date(15))]
-        deleteBlocklist(mail.id, blocklists: &lists, sessions: &sessions, quickSessions: &quick)
-        XCTAssertEqual(lists, [messengers])
-        XCTAssertEqual(sessions.map(\.blocklists), [[messengers.id], []], "an emptied session stays, to pick new lists")
-        XCTAssertEqual(quick.map(\.blocklists), [[messengers.id]], "an emptied quick session ends")
+        var rules = Rules(blocklists: lists, sessions: sessions, quickSessions: quick)
+        rules.deleteBlocklist(mail.id)
+        XCTAssertEqual(rules.blocklists, [messengers])
+        XCTAssertEqual(rules.sessions.map(\.blocklists), [[messengers.id], []], "an emptied session stays, to pick new lists")
+        XCTAssertEqual(rules.quickSessions.map(\.blocklists), [[messengers.id]], "an emptied quick session ends")
+    }
+
+    private func split(_ rules: Rules) -> ([Blocklist], [ScheduledSession]) {
+        XCTAssertEqual(rules.quickSessions, [])
+        return (rules.blocklists, rules.sessions)
     }
 
     func testMigratesOldScheduleIntoOneBlocklistAndSession() {
-        let (lists, sessions) = migratedSettings(gatedApps: [signal, gmail], scheduleDays: [2, 3], from: 8 * 60, to: 19 * 60)
+        let (lists, sessions) = split(.migrated(gatedApps: [signal, gmail], scheduleDays: [2, 3], from: 8 * 60, to: 19 * 60))
         XCTAssertEqual(lists.map(\.name), ["Distractions"])
         XCTAssertEqual(lists[0].entries, [signal, gmail])
         XCTAssertEqual(sessions.count, 1)
@@ -212,7 +243,7 @@ final class SessionTests: XCTestCase {
     }
 
     func testMigrationWithoutOldKeysIsEveryDayAllDay() {
-        let (lists, sessions) = migratedSettings(gatedApps: [], scheduleDays: nil, from: 0, to: 0)
+        let (lists, sessions) = split(.migrated(gatedApps: [], scheduleDays: nil, from: 0, to: 0))
         XCTAssertEqual(lists[0].entries, [])
         XCTAssertEqual(sessions[0].schedule, Schedule())
     }

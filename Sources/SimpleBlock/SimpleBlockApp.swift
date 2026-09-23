@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 @main
@@ -19,8 +20,18 @@ struct SimpleBlockApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let gatekeeper = Gatekeeper(model: .shared)
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        AppModel.shared.start()
+        registerLoginItem()
+        gatekeeper.start()
+    }
+
+    /// Adds itself as a login item while it isn't one. Ad-hoc builds may fail, which is fine.
+    private func registerLoginItem() {
+        guard SMAppService.mainApp.status == .notRegistered else { return }
+        do { try SMAppService.mainApp.register() } catch { NSLog("SimpleBlock: login item registration failed: \(error)") }
     }
 }
