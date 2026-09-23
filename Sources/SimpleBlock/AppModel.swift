@@ -2,7 +2,7 @@ import AppKit
 import SimpleBlockCore
 import UniformTypeIdentifiers
 
-/// App state for the menu bar and Settings: the rules (blocklists and sessions), time per reason, the log,
+/// App state for the menu bar and Settings: the rules (blocklists and sessions), time per reason, focus, the log,
 /// the unlock timers and a clock that Gatekeeper ticks every second. Gatekeeper does the gating with it.
 /// Settings live in UserDefaults, the log in reasons.jsonl.
 @MainActor
@@ -19,6 +19,16 @@ final class AppModel: ObservableObject {
             save(rules.quickSessions, "quickSessions")
         }
     }
+    /// Apps a focus session allows. They prefill the next focus, and edits during one apply right away.
+    @Published var focusApps: [GatedApp] {
+        didSet { save(focusApps, "focusApps") }
+    }
+    /// The running focus session, nil when off. Kept across relaunches.
+    @Published var focus: FocusSession? = nil {
+        didSet {
+            if let focus { save(focus, "focusSession") } else { UserDefaults.standard.removeObject(forKey: "focusSession") }
+        }
+    }
     @Published var settingsTab = SettingsTab.sessions
     @Published private(set) var entries: [LogEntry]
     /// Per-app unlock timers, started and stopped by Gatekeeper.
@@ -31,6 +41,7 @@ final class AppModel: ObservableObject {
         let defaults = UserDefaults.standard
         minutesPerReason = defaults.object(forKey: "minutesPerReason") as? Int ?? 5
         entries = log.readAll()
+        focusApps = Self.load("focusApps") ?? []
         if var lists: [Blocklist] = Self.load("blocklists") {
             // Sites (Chrome tabs and web apps) were dropped; their entries had a URL as the path.
             for i in lists.indices { lists[i].entries.removeAll { $0.path.contains("://") } }
@@ -44,6 +55,15 @@ final class AppModel: ObservableObject {
                 to: defaults.integer(forKey: "scheduleTo"))
             save(rules.blocklists, "blocklists")
             save(rules.sessions, "sessions")
+        }
+        if let session: FocusSession = Self.load("focusSession") {
+            if session.isOn(at: now) {
+                focus = session
+            } else {
+                // It ran out while Simple Block wasn't running.
+                record(focusEntry(session, now: now))
+                defaults.removeObject(forKey: "focusSession")
+            }
         }
     }
 
@@ -97,15 +117,62 @@ final class AppModel: ObservableObject {
 
     /// Adds apps picked in /Applications to a blocklist.
     func addApps(to list: UUID) {
+        let picked = pickApps()
+        guard let index = rules.blocklists.firstIndex(where: { $0.id == list }) else { return }
+        for app in picked where !rules.blocklists[index].entries.contains(where: { $0.bundleId == app.bundleId }) {
+            rules.blocklists[index].entries.append(app)
+        }
+    }
+
+    /// Focus app names for the menu, toasts and the log: "Obsidian, Todoist".
+    var focusNames: String { focusApps.map(\.name).joined(separator: ", ") }
+
+    /// Time left on the running focus, 0 when off. Moves with the clock.
+    var focusLeft: TimeInterval { focus?.remaining(at: now) ?? 0 }
+
+    /// Starts a focus session on the focus apps. Gatekeeper hides everything else. Does nothing without focus apps.
+    func startFocus(minutes: Int) {
+        guard !focusApps.isEmpty else { return }
+        let now = Date()
+        focus = FocusSession(started: now, ends: now.addingTimeInterval(TimeInterval(minutes * 60)))
+    }
+
+    /// Ends focus, early or on time, and logs it. The apps it hid stay hidden.
+    func endFocus() {
+        guard let focus else { return }
+        record(focusEntry(focus, now: Date()))
+        self.focus = nil
+    }
+
+    /// The `focus` log entry: allowed apps as the reason, minutes it ran, stamped when it ended.
+    private func focusEntry(_ session: FocusSession, now: Date) -> LogEntry {
+        LogEntry(ts: min(now, session.ends), bundleId: "focus", app: "Focus", kind: .focus,
+                 reason: focusNames, minutes: session.minutesRun(at: now))
+    }
+
+    /// Adds apps picked in /Applications to the focus apps.
+    func addFocusApps() {
+        for app in pickApps() { addFocusApp(app) }
+    }
+
+    func addFocusApp(_ app: GatedApp) {
+        if !focusApps.contains(where: { $0.bundleId == app.bundleId }) { focusApps.append(app) }
+    }
+
+    func removeFocusApp(_ bundleId: String) {
+        focusApps.removeAll { $0.bundleId == bundleId }
+    }
+
+    /// Apps picked in an open panel on /Applications.
+    private func pickApps() -> [GatedApp] {
         let panel = NSOpenPanel()
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.allowedContentTypes = [.application]
         panel.allowsMultipleSelection = true
         NSApp.activate()
-        guard panel.runModal() == .OK, let index = rules.blocklists.firstIndex(where: { $0.id == list }) else { return }
-        for url in panel.urls {
-            guard let id = Bundle(url: url)?.bundleIdentifier, !rules.blocklists[index].entries.contains(where: { $0.bundleId == id }) else { continue }
-            rules.blocklists[index].entries.append(GatedApp(bundleId: id, name: url.deletingPathExtension().lastPathComponent, path: url.path))
+        guard panel.runModal() == .OK else { return [] }
+        return panel.urls.compactMap { url in
+            Bundle(url: url)?.bundleIdentifier.map { GatedApp(bundleId: $0, name: url.deletingPathExtension().lastPathComponent, path: url.path) }
         }
     }
 

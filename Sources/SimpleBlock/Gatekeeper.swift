@@ -1,13 +1,19 @@
 import AppKit
+import Combine
 import SimpleBlockCore
 
 /// The gating: watches apps launch, activate and unhide, hides blocklisted ones and asks for a reason,
 /// runs their timers, and quits them on Never mind, time up in the background and super lock.
-/// What's gated comes from the model's rules, `Rules.access` decides.
+/// During focus it hides every regular app outside the focus apps and ends focus when time's up.
+/// What's gated comes from the model's rules, `Rules.access` decides; `FocusSession.hides` for focus.
 @MainActor
 final class Gatekeeper {
     private let model: AppModel
     private let prompt = PromptController()
+    private let toast = ToastController()
+    private var focusStarts: AnyCancellable?
+    /// When each app last got the focus toast and log entry. Launch, activate and unhide fire together for one attempt.
+    private var focusNoticed: [String: Date] = [:]
     /// Apps told to quit, by process ID, with when to stop waiting. Signal told to quit while it's still loading
     /// takes ~10 s and unhides itself meanwhile, which used to open a second prompt. Until then it only gets hidden.
     private var quitting: [pid_t: Date] = [:]
@@ -33,6 +39,10 @@ final class Gatekeeper {
             MainActor.assumeIsolated { self?.tick() }
         }
         RunLoop.main.add(ticker, forMode: .common)
+        // A focus restored at launch hides what's outside it too, quietly. Hiding only the app in front handed
+        // activation to the next visible app, which then got a toast and a `hidden` line nobody asked for.
+        if let focus = model.focus { hideAll(outside: focus) }
+        focusStarts = model.$focus.dropFirst().compactMap { $0 }.sink { [weak self] in self?.startFocus($0) }
         gate(NSWorkspace.shared.frontmostApplication)
     }
 
@@ -45,7 +55,8 @@ final class Gatekeeper {
         app.launchDate.map { now.timeIntervalSince($0) < 10 } ?? false
     }
 
-    /// Hides a gated app and asks for a reason, or quits it under super lock. Apps being quit only get hidden again.
+    /// Super lock quits the app, focus hides apps outside it, the reason gate hides a gated app and asks for a reason.
+    /// In that order. Apps being quit only get hidden again.
     private func gate(_ app: NSRunningApplication?, expired: Bool = false) {
         guard let app else { return }
         let entry = model.rules.entry(app.bundleIdentifier)
@@ -53,19 +64,18 @@ final class Gatekeeper {
         if prompt.isShowing, entry?.bundleId != prompt.bundleId, app != NSRunningApplication.current {
             prompt.bringToFront()
         }
-        guard let entry else { return }
         let now = Date()
         if quitting[app.processIdentifier].map({ $0 > now }) ?? false {
             app.hide()
             if prompt.isShowing { prompt.bringToFront() }
             return
         }
-        switch model.rules.access(entry.bundleId, timers: model.timers, at: now) {
-        case .open:
-            return
-        case .lock:
+        let access = entry.map { model.rules.access($0.bundleId, timers: model.timers, at: now) } ?? .open
+        if let entry, access == .lock {
             lock(app, entry, now: now)
-        case .ask:
+        } else if focusHides(app, now: now) {
+            hideForFocus(app, now: now)
+        } else if let entry, access == .ask {
             // Backdrop first, it's instant. hide() waits on the other app and building the prompt takes a moment.
             prompt.cover()
             app.hide()
@@ -74,6 +84,46 @@ final class Gatekeeper {
             } else {
                 ask(entry, trigger: expired ? .expired : isFresh(app, now: now) ? .launch : .switch, now: now)
             }
+        }
+    }
+
+    /// Focus only ever hides regular apps: menu bar and background ones like Raycast's launcher are left alone.
+    private func focusHides(_ app: NSRunningApplication, now: Date) -> Bool {
+        guard app.activationPolicy == .regular, let focus = model.focus else { return false }
+        return focus.hides(app.bundleIdentifier, allowed: model.focusApps, at: now)
+    }
+
+    /// Hides an app outside focus, never quits it. Toast and `hidden` log entry once per attempt.
+    private func hideForFocus(_ app: NSRunningApplication, now: Date) {
+        app.hide()
+        guard let id = app.bundleIdentifier, focusNoticed[id].map({ now.timeIntervalSince($0) > 3 }) ?? true else { return }
+        focusNoticed[id] = now
+        let name = app.localizedName ?? id
+        model.record(LogEntry(ts: now, bundleId: id, app: name, kind: .hidden))
+        let left = model.focus?.remaining(at: now) ?? 0
+        toast.show(icon: app.icon ?? NSApp.applicationIconImage,
+                   title: "\(name) is hidden while you focus", subtitle: "\(model.focusNames) · \(countdown(left)) left")
+    }
+
+    /// Focus starting: hide every running regular app outside it, then open the first focus app so it lands in front.
+    /// Called before `model.focus` changes, so it gets the new session.
+    private func startFocus(_ session: FocusSession) {
+        hideAll(outside: session)
+        guard let first = model.focusApps.first else { return }
+        // activate() on another app gets refused from the background. Launch Services brings it forward.
+        let process = running(first).first
+        process?.unhide()
+        NSWorkspace.shared.openApplication(at: process?.bundleURL ?? URL(fileURLWithPath: first.path), configuration: .init())
+    }
+
+    /// Hides every visible regular app outside focus. Not attempts, so no toast or log entry.
+    private func hideAll(outside session: FocusSession) {
+        let now = Date()
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && !app.isHidden {
+            guard let id = app.bundleIdentifier, session.hides(id, allowed: model.focusApps, at: now) else { continue }
+            app.hide()
+            // Hiding one app can activate another for a moment, that's not an attempt either.
+            focusNoticed[id] = now
         }
     }
 
@@ -137,6 +187,12 @@ final class Gatekeeper {
     private func tick() {
         let now = model.tick()
         quitting = quitting.filter { $0.value > now }
+        // Focus time up: log it and say so. The apps it hid stay hidden.
+        if let focus = model.focus, !focus.isOn(at: now) {
+            model.endFocus()
+            toast.show(icon: NSApp.applicationIconImage, title: "Focus done",
+                       subtitle: "\(durationText(focus.minutesRun(at: now))) on \(model.focusNames)")
+        }
         // A super lock starting quits its apps right away, timer or not.
         for locked in model.rules.superLocked(at: now) {
             for app in running(locked) where quitting[app.processIdentifier] == nil { quit(app, now: now) }

@@ -344,3 +344,66 @@ private extension Data {
         try handle.write(contentsOf: self)
     }
 }
+
+final class SessionRowTests: XCTestCase {
+    private let messengers = UUID()
+
+    func testNextStart() {
+        let day = Schedule(days: [2], from: 10 * 60, to: 18 * 60)
+        XCTAssertEqual(day.nextStart(after: date(8), calendar: utc), date(10))
+        XCTAssertEqual(day.nextStart(after: date(20), calendar: utc), date(day: 21, 10), "next Monday")
+        XCTAssertEqual(Schedule(days: Set(2...6), from: 10 * 60, to: 18 * 60).nextStart(after: date(day: 18, 19), calendar: utc),
+                       date(day: 21, 10), "Friday evening waits for Monday")
+        XCTAssertEqual(Schedule(from: 18 * 60, to: 10 * 60).nextStart(after: date(12), calendar: utc), date(18))
+        XCTAssertEqual(Schedule(days: [3], from: 9 * 60, to: 9 * 60).nextStart(after: date(12), calendar: utc), date(day: 15, 0),
+                       "all day starts at midnight")
+        XCTAssertNil(Schedule(days: []).nextStart(after: date(12), calendar: utc))
+    }
+
+    func testDaysSummary() {
+        var english = utc
+        english.locale = Locale(identifier: "en_US_POSIX")
+        XCTAssertEqual(Schedule().daysSummary(calendar: english), "Every day")
+        XCTAssertEqual(Schedule(days: Set(2...6)).daysSummary(calendar: english), "Weekdays")
+        XCTAssertEqual(Schedule(days: [1, 7]).daysSummary(calendar: english), "Weekends")
+        XCTAssertEqual(Schedule(days: []).daysSummary(calendar: english), "No days")
+        XCTAssertEqual(Schedule(days: [6, 1, 2, 4]).daysSummary(calendar: english), "Mon, Wed, Fri, Sun")
+    }
+
+    func testTimeLeft() {
+        XCTAssertEqual(timeLeft(0), "0 min")
+        XCTAssertEqual(timeLeft(20), "1 min", "rounds up")
+        XCTAssertEqual(timeLeft(45 * 60), "45 min")
+        XCTAssertEqual(timeLeft(3600), "1 h")
+        XCTAssertEqual(timeLeft(13 * 3600 + 34 * 60 + 20), "13 h 35 min")
+        XCTAssertEqual(timeLeft(48 * 3600), "2 d")
+        XCTAssertEqual(timeLeft(51 * 3600), "2 d 3 h")
+    }
+
+    func testStatus() {
+        let night = ScheduledSession(blocklists: [messengers], schedule: Schedule(from: 18 * 60, to: 10 * 60), superLock: true)
+        XCTAssertEqual(night.status(at: date(20), calendar: utc), .on(until: date(day: 15, 10)))
+        XCTAssertEqual(night.status(at: date(12), calendar: utc), .starts(date(18)))
+        let day = ScheduledSession(blocklists: [messengers], schedule: Schedule(days: [2], from: 10 * 60, to: 18 * 60))
+        XCTAssertEqual(day.status(at: date(20), calendar: utc), .starts(date(day: 21, 10)))
+        XCTAssertEqual(ScheduledSession(blocklists: [], schedule: Schedule()).status(at: date(12), calendar: utc), .alwaysOn)
+        XCTAssertEqual(ScheduledSession(blocklists: [], schedule: Schedule(), enabled: false).status(at: date(12), calendar: utc), .off)
+        XCTAssertEqual(ScheduledSession(blocklists: [], schedule: Schedule(days: [])).status(at: date(12), calendar: utc), .off)
+    }
+
+    func testDuplicateSessionGoesRightBelowDisabled() {
+        let night = ScheduledSession(blocklists: [messengers], schedule: Schedule(from: 18 * 60, to: 10 * 60), superLock: true)
+        let day = ScheduledSession(blocklists: [messengers], schedule: Schedule(from: 10 * 60, to: 18 * 60))
+        var rules = Rules(sessions: [night, day])
+        let id = rules.duplicateSession(night.id)
+        XCTAssertEqual(rules.sessions.map(\.id), [night.id, id, day.id])
+        var copy = rules.sessions[1]
+        XCTAssertNotEqual(copy.id, night.id)
+        XCTAssertFalse(copy.enabled)
+        copy.id = night.id
+        copy.enabled = true
+        XCTAssertEqual(copy, night, "same blocklists, schedule and super lock")
+        XCTAssertNil(rules.duplicateSession(UUID()))
+        XCTAssertEqual(rules.sessions.count, 3)
+    }
+}

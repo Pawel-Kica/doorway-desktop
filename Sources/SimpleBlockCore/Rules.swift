@@ -39,6 +39,27 @@ public struct ScheduledSession: Codable, Identifiable, Equatable {
         enabled = try c.decode(Bool.self, forKey: .enabled)
         superLock = try c.decodeIfPresent(Bool.self, forKey: .superLock) ?? false
     }
+
+    /// What the session does at `now`, for its row in Settings.
+    public func status(at now: Date, calendar: Calendar = .current) -> SessionStatus {
+        guard enabled else { return .off }
+        if schedule.isActive(at: now, calendar: calendar) {
+            return schedule.end(of: now, calendar: calendar).map { .on(until: $0) } ?? .alwaysOn
+        }
+        return schedule.nextStart(after: now, calendar: calendar).map { .starts($0) } ?? .off
+    }
+}
+
+/// A scheduled session's state at a moment.
+public enum SessionStatus: Equatable {
+    /// On now, ends at `until`.
+    case on(until: Date)
+    /// Every day, all day: never ends.
+    case alwaysOn
+    /// Enabled but off now, starts next at the date.
+    case starts(Date)
+    /// Disabled, or no day picked.
+    case off
 }
 
 /// A session started from the menu bar that runs until `ends`.
@@ -152,6 +173,17 @@ public struct Rules: Equatable {
         for i in sessions.indices { sessions[i].blocklists.remove(id) }
         for i in quickSessions.indices { quickSessions[i].blocklists.remove(id) }
         quickSessions.removeAll { $0.blocklists.isEmpty }
+    }
+
+    /// Copies a session right below itself, disabled so it gates nothing until it's edited. Returns the copy's ID.
+    @discardableResult
+    public mutating func duplicateSession(_ id: UUID) -> UUID? {
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return nil }
+        var copy = sessions[index]
+        copy.id = UUID()
+        copy.enabled = false
+        sessions.insert(copy, at: index + 1)
+        return copy.id
     }
 
     private func entries(in lists: Set<UUID>) -> [GatedApp] {

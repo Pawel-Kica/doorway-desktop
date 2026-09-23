@@ -45,4 +45,43 @@ public struct Schedule: Codable, Equatable {
         let day = from > to && minute >= from ? calendar.date(byAdding: .day, value: 1, to: date)! : date
         return calendar.date(bySettingHour: to / 60, minute: to % 60, second: 0, of: day)
     }
+
+    /// When the next window starts after `date`, all-day ones at midnight. Nil when no day is picked.
+    /// Meant for a schedule that's off at `date`.
+    public func nextStart(after date: Date, calendar: Calendar = .current) -> Date? {
+        let start = from == to ? 0 : from
+        let today = calendar.startOfDay(for: date)
+        // Eight days, so a single day that already started today comes round again next week.
+        for offset in 0...7 {
+            let day = calendar.date(byAdding: .day, value: offset, to: today)!
+            guard days.contains(calendar.component(.weekday, from: day)),
+                  let next = calendar.date(bySettingHour: start / 60, minute: start % 60, second: 0, of: day),
+                  next > date else { continue }
+            return next
+        }
+        return nil
+    }
+
+    /// Weekdays in the order Settings shows them.
+    public static let mondayFirst = [2, 3, 4, 5, 6, 7, 1]
+
+    /// "Every day", "Weekdays", "Weekends", "No days", else short names Monday first: "Mon, Wed, Fri".
+    public func daysSummary(calendar: Calendar = .current) -> String {
+        switch days {
+        case Set(1...7): "Every day"
+        case Set(2...6): "Weekdays"
+        case [1, 7]: "Weekends"
+        case []: "No days"
+        default: Self.mondayFirst.filter(days.contains).map { calendar.shortWeekdaySymbols[$0 - 1] }.joined(separator: ", ")
+        }
+    }
+}
+
+/// Time left, rounded up to the minute: "45 min", "13 h 35 min", "2 d 3 h" from a day up.
+public func timeLeft(_ seconds: TimeInterval) -> String {
+    let minutes = max(0, Int((seconds / 60).rounded(.up)))
+    if minutes < 60 { return "\(minutes) min" }
+    if minutes < 24 * 60 { return minutes % 60 == 0 ? "\(minutes / 60) h" : "\(minutes / 60) h \(minutes % 60) min" }
+    let hours = minutes % (24 * 60) / 60
+    return hours == 0 ? "\(minutes / (24 * 60)) d" : "\(minutes / (24 * 60)) d \(hours) h"
 }

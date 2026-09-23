@@ -1,88 +1,125 @@
 import SimpleBlockCore
 import SwiftUI
 
-/// Menu bar icon, plus "Signal 3:12" while a timer runs (the one ending first).
+/// Menu bar icon, plus "Signal 3:12" while a timer runs (the one ending first), else a scope and "1:42" during focus.
 struct MenuBarLabel: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        Image(systemName: "hand.raised.fill")
         if let running = model.timers.soonest(now: model.now),
            let app = model.rules.entry(running.bundleId) {
+            Image(systemName: "hand.raised.fill")
             Text("\(app.name) \(countdown(running.remaining))")
+        } else if model.focusLeft > 0 {
+            Image(systemName: "scope")
+            Text(minuteCountdown(model.focusLeft))
+        } else {
+            Image(systemName: "hand.raised.fill")
         }
     }
 }
 
-/// The menu bar popover: what gates now, gated apps with timers, quick sessions, Start session, today's count, Settings, Quit.
+/// The menu bar popover: what gates now, gated apps with timers, quick sessions, focus, Start session, Start focus,
+/// focus sounds, today's count, Settings, Quit. Drawn at the `uiScale` size, like Settings.
 struct PopoverView: View {
     @ObservedObject var model: AppModel
+    @AppStorage(UIScale.key) private var scale = UIScale.standard
     @Environment(\.openSettings) private var openSettings
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         let gated = model.rules.gated(at: model.now)
         let status = status()
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 4 * scale) {
             HStack {
-                Text("Simple Block").font(.system(size: 17, weight: .semibold))
+                Text("Simple Block").scaledFont(17, weight: .semibold)
                 Spacer()
                 Text(status.text)
-                    .font(.system(size: 13, weight: .semibold))
+                    .scaledFont(13, weight: .semibold)
                     .lineLimit(1)
                     .foregroundStyle(status.on ? .green : .orange)
-                    .padding(.horizontal, 10).padding(.vertical, 3)
+                    .padding(.horizontal, 10 * scale).padding(.vertical, 3 * scale)
                     .background((status.on ? Color.green : Color.orange).opacity(0.18), in: Capsule())
             }
-            .padding(.horizontal, 8).padding(.bottom, 10)
+            .padding(.horizontal, 8 * scale).padding(.bottom, 10 * scale)
 
             if gated.isEmpty {
-                Text("Nothing gated now").foregroundStyle(.secondary).padding(10)
+                Text("Nothing gated now").foregroundStyle(.secondary).padding(10 * scale)
             }
             // A running timer shows its countdown, a super lock says when it ends, everything else a lock: it asks for a reason.
             let superLocked = model.rules.superLocked(at: model.now).map(\.bundleId)
             ForEach(gated) { app in
                 let left = model.timers.remaining(app.bundleId, now: model.now)
-                HStack(spacing: 12) {
-                    AppIcon(app: app, size: 30)
+                HStack(spacing: 12 * scale) {
+                    AppIcon(app: app, size: 30 * scale)
                     Text(app.name)
                     Spacer()
                     if superLocked.contains(app.bundleId) {
                         Text(model.lockedUntil(app.bundleId, now: model.now))
-                            .font(.system(size: 13)).foregroundStyle(.red)
-                        Image(systemName: "lock.fill").font(.system(size: 13)).foregroundStyle(.red)
+                            .scaledFont(13).foregroundStyle(.red)
+                        Image(systemName: "lock.fill").scaledFont(13).foregroundStyle(.red)
                     } else if left > 0 {
                         Text("\(countdown(left)) left").monospacedDigit()
                     } else {
-                        Image(systemName: "lock.fill").font(.system(size: 13)).foregroundStyle(.tertiary)
+                        Image(systemName: "lock.fill").scaledFont(13).foregroundStyle(.tertiary)
                     }
                 }
-                .padding(.horizontal, 10).padding(.vertical, 5)
+                .padding(.horizontal, 10 * scale).padding(.vertical, 5 * scale)
             }
 
-            Divider().padding(.vertical, 8)
+            Divider().padding(.vertical, 8 * scale)
             ForEach(model.rules.quickSessions) { quick in
-                HStack(spacing: 12) {
+                HStack(spacing: 12 * scale) {
                     PopoverSymbol(symbol: "timer")
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: 1 * scale) {
                         Text(model.rules.names(quick.blocklists)).lineLimit(1)
                         Text("\(countdown(quick.ends.timeIntervalSince(model.now))) left")
-                            .font(.system(size: 13)).monospacedDigit().foregroundStyle(.secondary)
+                            .scaledFont(13).monospacedDigit().foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("End") { model.endQuickSession(quick.id) }
+                    Button { model.endQuickSession(quick.id) } label: { Text("End").bezelPadding() }
                 }
-                .padding(.horizontal, 10).padding(.vertical, 6)
+                .padding(.horizontal, 10 * scale).padding(.vertical, 6 * scale)
+            }
+            if model.focusLeft > 0 {
+                HStack(spacing: 12 * scale) {
+                    PopoverSymbol(symbol: "scope")
+                    VStack(alignment: .leading, spacing: 1 * scale) {
+                        Text("Focus")
+                        HStack(spacing: 6 * scale) {
+                            Text("\(countdown(model.focusLeft)) left").monospacedDigit()
+                            ForEach(model.focusApps) { app in AppIcon(app: app, size: 16 * scale).help(app.name) }
+                        }
+                        .scaledFont(13).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button { model.endFocus() } label: { Text("End").bezelPadding() }
+                }
+                .padding(.horizontal, 10 * scale).padding(.vertical, 6 * scale)
             }
             if !model.rules.blocklists.isEmpty { StartSessionMenu(model: model) }
+            if model.focusLeft == 0 {
+                if model.focusApps.isEmpty {
+                    PopoverRow(symbol: "scope", title: "Start focus") { open(.focus) }
+                } else {
+                    StartFocusMenu(model: model)
+                }
+            }
+            HStack(alignment: .top, spacing: 12 * scale) {
+                PopoverSymbol(symbol: "headphones")
+                FocusSoundsControl(sounds: FocusSounds.shared, scale: scale)
+            }
+            .padding(.horizontal, 10 * scale).padding(.vertical, 6 * scale)
             PopoverRow(symbol: "list.bullet", title: "Today's reasons",
                        trailing: "\(reasonsToday(model.entries, now: model.now))") { open(.history) }
             PopoverRow(symbol: "gearshape", title: "Settings…") { open(.sessions) }
             PopoverRow(symbol: "power", title: "Quit") { model.quit() }
         }
-        .font(.system(size: 15))
-        .padding(14)
-        .frame(width: 360)
+        .scaledFont(15)
+        .controlSize(UIScale.controlSize(scale))
+        .padding(14 * scale)
+        .frame(width: 360 * scale)
+        .environment(\.uiScale, scale)
     }
 
     /// What gates now: a super lock first, then a scheduled session (they're the main thing), else the quick session ending last.
@@ -99,8 +136,9 @@ struct PopoverView: View {
         return ("No session now", false)
     }
 
-    private func open(_ tab: SettingsTab) {
-        model.settingsTab = tab
+    /// Opens Settings, on `tab` when given.
+    private func open(_ tab: SettingsTab?) {
+        if let tab { model.settingsTab = tab }
         dismiss()
         openSettings()
         NSApp.activate()
@@ -139,14 +177,42 @@ private struct StartSessionMenu: View {
     }
 }
 
+/// "Start focus": a few lengths under the focus apps' names. Picking one closes the popover, which would
+/// otherwise stay open over the first focus app (Simple Block isn't active, so it doesn't close by itself).
+private struct StartFocusMenu: View {
+    @ObservedObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var hovering = false
+
+    var body: some View {
+        Menu {
+            Section(model.focusNames) {
+                ForEach(FocusPane.lengths, id: \.0) { minutes, label in
+                    Button(label) {
+                        dismiss()
+                        model.startFocus(minutes: minutes)
+                    }
+                }
+            }
+        } label: {
+            PopoverRowLabel(symbol: "scope", title: "Start focus", trailing: nil, hovering: hovering)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .onHover { hovering = $0 }
+    }
+}
+
 /// Circled SF Symbol at the start of a popover row.
 private struct PopoverSymbol: View {
     let symbol: String
+    @Environment(\.uiScale) private var scale
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 14))
-            .frame(width: 30, height: 30)
+            .scaledFont(14)
+            .frame(width: 30 * scale, height: 30 * scale)
             .background(Color.primary.opacity(0.1), in: Circle())
     }
 }
@@ -157,17 +223,18 @@ private struct PopoverRowLabel: View {
     let title: String
     let trailing: String?
     let hovering: Bool
+    @Environment(\.uiScale) private var scale
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 12 * scale) {
             PopoverSymbol(symbol: symbol)
             Text(title)
             Spacer()
             if let trailing { Text(trailing).foregroundStyle(.secondary) }
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
+        .padding(.horizontal, 10 * scale).padding(.vertical, 6 * scale)
         .contentShape(Rectangle())
-        .background(hovering ? Color.primary.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+        .background(hovering ? Color.primary.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 10 * scale))
     }
 }
 

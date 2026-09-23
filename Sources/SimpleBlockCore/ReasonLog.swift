@@ -2,7 +2,9 @@ import Foundation
 
 public enum LogKind: String, Codable {
     /// `locked`: a super-locked app tried to open and was quit.
-    case launch, `switch`, expired, cancelled, locked, quit
+    /// `hidden`: an app outside a focus session tried to come forward and was hidden.
+    /// `focus`: a focus session ended; `reason` lists its allowed apps, `minutes` how long it ran.
+    case launch, `switch`, expired, cancelled, locked, quit, hidden, focus
 
     /// Kinds that carry a typed reason.
     public var hasReason: Bool { self == .launch || self == .switch || self == .expired }
@@ -15,17 +17,20 @@ public struct LogEntry: Codable, Equatable {
     public var app: String
     public var kind: LogKind
     public var reason: String?
+    /// Only on `focus`: minutes the session ran.
+    public var minutes: Int?
 
-    public init(ts: Date, bundleId: String, app: String, kind: LogKind, reason: String? = nil) {
+    public init(ts: Date, bundleId: String, app: String, kind: LogKind, reason: String? = nil, minutes: Int? = nil) {
         self.ts = ts
         self.bundleId = bundleId
         self.app = app
         self.kind = kind
         self.reason = reason
+        self.minutes = minutes
     }
 }
 
-/// JSON line encoding. `ts` is ISO 8601 with the local offset, `reason` is omitted when nil.
+/// JSON line encoding. `ts` is ISO 8601 with the local offset, `reason` and `minutes` are omitted when nil.
 public enum LogCodec {
     public static func encode(_ entry: LogEntry, timeZone: TimeZone = .current) throws -> String {
         let formatter = ISO8601DateFormatter()
