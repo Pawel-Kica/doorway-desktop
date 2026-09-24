@@ -544,6 +544,7 @@ private struct TimeField: View {
 private struct GeneralPane: View {
     @ObservedObject var model: AppModel
     @AppStorage(UIScale.key) private var scale = UIScale.standard
+    @AppStorage(AppIconChoice.key) private var appIcon = AppIconChoice.hand.rawValue
 
     var body: some View {
         Pane {
@@ -561,6 +562,27 @@ private struct GeneralPane: View {
                             Button { model.minutesPerReason += 1 } label: { Text(Image(systemName: "plus")).bezelPadding() }
                                 .disabled(model.minutesPerReason >= 120)
                                 .accessibilityLabel("More time")
+                        }
+                    }
+                }
+                CardRow {
+                    SettingRow(title: "App icon", note: "In the Dock, Finder and Raycast.") {
+                        HStack(spacing: 4 * scale) {
+                            ForEach(AppIconChoice.allCases) { choice in
+                                Button {
+                                    appIcon = choice.rawValue
+                                    AppIconChoice.apply()
+                                } label: {
+                                    Image(nsImage: choice.image(pixels: 128))
+                                        .resizable()
+                                        .frame(width: 44 * scale, height: 44 * scale)
+                                        .padding(2 * scale)
+                                        .background(appIcon == choice.rawValue ? Color.accentColor.opacity(0.35) : .clear,
+                                                    in: RoundedRectangle(cornerRadius: 10 * scale))
+                                }
+                                .buttonStyle(.plain)
+                                .help(choice.name)
+                            }
                         }
                     }
                 }
