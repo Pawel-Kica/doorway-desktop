@@ -185,10 +185,9 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Logs `quit` and exits. Quitting is the off switch.
-    func quit() {
+    /// Logs `quit`. Quitting is the off switch. The app delegate calls it on the way out: popover Quit, ⌘Q or the Dock.
+    func recordQuit() {
         record(LogEntry(ts: Date(), bundleId: Bundle.main.bundleIdentifier ?? "com.pawel.simple-block", app: "Simple Block", kind: .quit))
-        NSApp.terminate(nil)
     }
 
     private static func signalIfInstalled() -> [GatedApp] {

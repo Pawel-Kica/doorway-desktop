@@ -6,6 +6,12 @@ struct SimpleBlockApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     private let model = AppModel.shared
 
+    init() {
+        // New status items go left of the others, which on a full MacBook menu bar is under the notch. 300 pt from
+        // the right edge keeps it in view. ⌘-dragging it saves the new place over this.
+        UserDefaults.standard.register(defaults: ["NSStatusItem Preferred Position Item-0": 300])
+    }
+
     var body: some Scene {
         MenuBarExtra {
             PopoverView(model: model)
@@ -26,7 +32,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         registerLoginItem()
+        AppIconChoice.apply()
         gatekeeper.start()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        AppModel.shared.recordQuit()
     }
 
     /// Opening Simple Block again (Raycast, Spotlight, Finder) brings up Settings. The menu bar icon stays.

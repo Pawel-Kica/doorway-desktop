@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds /Applications/Simple Block.app (so Raycast and Spotlight find it): release binary + Info.plist (LSUIElement), ad-hoc signed.
+# Builds /Applications/Simple Block.app (so Raycast and Spotlight find it): release binary + Info.plist, ad-hoc signed.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -24,11 +24,14 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleShortVersionString</key><string>0.1</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
-    <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>
 PLIST
 
+# A picked app icon is an Icon\r file in the bundle root plus Finder info, which codesign refuses. The app puts it back
+# at launch.
+if [ -e "$APP/Icon"$'\r' ]; then mv -f "$APP/Icon"$'\r' /tmp/; fi
+xattr -cr "$APP"
 codesign --force --sign - "$APP"
 echo "Built $APP"

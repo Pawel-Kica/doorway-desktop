@@ -119,7 +119,7 @@ struct PopoverView: View {
             PopoverRow(symbol: "list.bullet", title: "Today's reasons",
                        trailing: "\(reasonsToday(model.entries, now: model.now))") { open(.history) }
             PopoverRow(symbol: "gearshape", title: "Settings…") { open(.sessions) }
-            PopoverRow(symbol: "power", title: "Quit") { model.quit() }
+            PopoverRow(symbol: "power", title: "Quit") { NSApp.terminate(nil) }
         }
         .scaledFont(15)
         .controlSize(UIScale.controlSize(scale))
