@@ -5,7 +5,8 @@ import SimpleBlockCore
 import SwiftUI
 
 /// Plays music: the built-in Lofi Jazz mix and audio files added in Settings. One shared instance, so the popover
-/// and Settings drive the same playback. Saved in UserDefaults: `music` (JSON MusicLibrary), `musicTrack`, `musicVolume`.
+/// and Settings drive the same playback. Saved in UserDefaults: `music` (JSON MusicLibrary), `musicTrack`, `musicVolume`,
+/// `musicPositions` (each track's spot in seconds, so a track picks up where it was, across relaunches too).
 /// It's the Mac's now playing app, so the play/pause key drives it instead of opening Apple Music.
 @MainActor final class Music: ObservableObject {
     static let shared = Music()
@@ -34,12 +35,20 @@ import SwiftUI
             player?.volume = Float(volume * volume)
         }
     }
+    /// Where the current track is, in seconds.
+    @Published private(set) var position: Double = 0
     /// Lofi Jazz download progress, 0...1, while it runs.
     @Published private(set) var downloadProgress: Double?
     @Published private(set) var downloadFailed = false
 
     private var player: AVPlayer?
     private var watch: AnyCancellable?
+    private var ready: AnyCancellable?
+    /// Records the spot once a second. Only added after the resume seek, so the start doesn't overwrite a saved spot.
+    private var clock: Any?
+    private var positions: [String: Double] {
+        didSet { UserDefaults.standard.set(positions, forKey: "musicPositions") }
+    }
     private var download: URLSessionDownloadTask?
     private var downloadWatch: NSKeyValueObservation?
 
@@ -50,6 +59,8 @@ import SwiftUI
         self.library = library
         track = library.tracks.first { $0.id == defaults.string(forKey: "musicTrack") } ?? .lofiJazz
         volume = defaults.object(forKey: "musicVolume") as? Double ?? 0.5
+        positions = defaults.dictionary(forKey: "musicPositions") as? [String: Double] ?? [:]
+        position = positions[track.id] ?? 0
         handleMediaKeys()
     }
 
@@ -82,8 +93,13 @@ import SwiftUI
 
     // MARK: Playback
 
-    /// Plays a track from the start, replacing whatever plays.
+    /// Plays a track from its saved spot, replacing whatever plays. The current one just keeps playing.
     func play(_ track: Track) {
+        if track == self.track, player != nil {
+            if !isPlaying { toggle() }
+            return
+        }
+        stop()
         self.track = track
         UserDefaults.standard.set(track.id, forKey: "musicTrack")
         start()
@@ -93,6 +109,7 @@ import SwiftUI
     func toggle() {
         if isPlaying {
             player?.pause()
+            savePosition()
             isPlaying = false
         } else if let player {
             player.play()
@@ -102,9 +119,25 @@ import SwiftUI
         }
     }
 
+    /// The current track from 0:00.
+    func startOver() {
+        positions[track.id] = nil
+        position = 0
+        if let player, clock != nil {
+            player.seek(to: .zero)
+            player.play()
+            isPlaying = true
+        } else {
+            start()
+        }
+    }
+
+    /// Plays the current track from its saved spot. The seek waits for the item to be ready, playback waits for the seek.
     private func start() {
         stop()
         failed = false
+        let resume = positions[track.id] ?? 0
+        position = resume
         let item = AVPlayerItem(url: source(track))
         let player = AVPlayer(playerItem: item)
         let center = NotificationCenter.default
@@ -114,20 +147,45 @@ import SwiftUI
             center.publisher(for: AVPlayerItem.didPlayToEndTimeNotification, object: item).map { _ in true })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] ended in ended ? self?.trackEnded() : self?.fail() }
+        ready = item.publisher(for: \.status).first { $0 == .readyToPlay }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                player.seek(to: CMTime(seconds: resume, preferredTimescale: 600)) { _ in
+                    DispatchQueue.main.async { self?.resumed(player) }
+                }
+            }
         player.volume = Float(volume * volume)
-        player.play()
         self.player = player
         isPlaying = true
+    }
+
+    private func resumed(_ player: AVPlayer) {
+        guard player == self.player else { return }
+        clock = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) {
+            [weak self] _ in MainActor.assumeIsolated { self?.savePosition() }
+        }
+        if isPlaying { player.play() }
+    }
+
+    private func savePosition() {
+        guard let player, clock != nil else { return }
+        let seconds = player.currentTime().seconds
+        guard seconds.isFinite else { return }
+        position = seconds
+        positions[track.id] = seconds
     }
 
     /// Repeat (or no other Active track): from the top. Play next: the next Active track.
     private func trackEnded() {
         let next = library.next(after: track.id)
         if next == track.id {
+            positions[track.id] = nil
             player?.seek(to: .zero)
             player?.play()
-        } else if let track = library.tracks.first(where: { $0.id == next }) {
-            play(track)
+        } else if let nextTrack = library.tracks.first(where: { $0.id == next }) {
+            stop()
+            positions[track.id] = nil
+            play(nextTrack)
         }
     }
 
@@ -137,7 +195,11 @@ import SwiftUI
     }
 
     private func stop() {
+        savePosition()
         watch = nil
+        ready = nil
+        if let clock { player?.removeTimeObserver(clock) }
+        clock = nil
         player?.pause()
         player = nil
         isPlaying = false
@@ -177,7 +239,9 @@ import SwiftUI
         if track == self.track {
             stop()
             self.track = .lofiJazz
+            position = positions[Track.lofiJazz.id] ?? 0
         }
+        positions[track.id] = nil
         library.remove(track.id)
         try? FileManager.default.trashItem(at: Self.file(track), resultingItemURL: nil)
     }
@@ -363,10 +427,12 @@ struct MusicPane: View {
                 if music.failed {
                     Text("Can't play this track").foregroundStyle(.red)
                 } else {
-                    Text(music.isPlaying ? "Playing" : "Paused")
+                    Text("\(music.isPlaying ? "Playing" : "Paused") · \(Duration.seconds(music.position).formatted(.time(pattern: .hourMinuteSecond)))")
                 }
             }
             Spacer()
+            Button { music.startOver() } label: { Text("Start over").bezelPadding() }
+                .disabled(music.position < 1)
         }
     }
 
