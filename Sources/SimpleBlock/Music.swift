@@ -300,7 +300,7 @@ private struct PlayButton: View {
     }
 }
 
-/// Music tab in Settings: now playing with the volume, what a track's end does, then Active and Library.
+/// Music tab in Settings: now playing, what a track's end does, then Active and Library. Volume lives in the popover.
 /// Tracks move between the two with + and −, and up and down in Active with the arrows.
 struct MusicPane: View {
     @ObservedObject var music = Music.shared
@@ -355,7 +355,7 @@ struct MusicPane: View {
         .navigationTitle("Music")
     }
 
-    /// Big play button, the track's name, the volume.
+    /// Big play button and the track's name.
     private var nowPlaying: some View {
         HStack(spacing: 16 * scale) {
             PlayButton(music: music, size: 52 * scale)
@@ -366,12 +366,7 @@ struct MusicPane: View {
                     Text(music.isPlaying ? "Playing" : "Paused")
                 }
             }
-            Spacer(minLength: 24 * scale)
-            Image(systemName: "speaker.wave.3.fill", variableValue: music.volume)
-                .foregroundStyle(.secondary)
-            Slider(value: $music.volume, in: 0...1)
-                .tint(.green)
-                .frame(width: 240 * scale)
+            Spacer()
         }
     }
 
