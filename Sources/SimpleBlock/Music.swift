@@ -1,10 +1,12 @@
 import AVFoundation
 import Combine
+import MediaPlayer
 import SimpleBlockCore
 import SwiftUI
 
 /// Plays music: the built-in Lofi Jazz mix and audio files added in Settings. One shared instance, so the popover
 /// and Settings drive the same playback. Saved in UserDefaults: `music` (JSON MusicLibrary), `musicTrack`, `musicVolume`.
+/// It's the Mac's now playing app, so the play/pause key drives it instead of opening Apple Music.
 @MainActor final class Music: ObservableObject {
     static let shared = Music()
 
@@ -17,8 +19,12 @@ import SwiftUI
     @Published var library: MusicLibrary {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(library), forKey: "music") }
     }
-    @Published private(set) var track: Track
-    @Published private(set) var isPlaying = false
+    @Published private(set) var track: Track {
+        didSet { updateNowPlaying() }
+    }
+    @Published private(set) var isPlaying = false {
+        didSet { updateNowPlaying() }
+    }
     /// The track couldn't play (file gone, no network for the mix). The next play clears it.
     @Published private(set) var failed = false
     /// The slider, 0...1. Gain is its square, which feels more even than linear.
@@ -44,6 +50,34 @@ import SwiftUI
         self.library = library
         track = library.tracks.first { $0.id == defaults.string(forKey: "musicTrack") } ?? .lofiJazz
         volume = defaults.object(forKey: "musicVolume") as? Double ?? 0.5
+        handleMediaKeys()
+    }
+
+    // MARK: Media keys
+
+    /// Takes the play/pause key (and Control Center's buttons). macOS sends them to the now playing app, and with none
+    /// it opens Apple Music, so this claims now playing from launch, paused. An app that starts playing later takes over.
+    private func handleMediaKeys() {
+        let commands = MPRemoteCommandCenter.shared()
+        commands.togglePlayPauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.toggle() }
+            return .success
+        }
+        commands.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor in if self?.isPlaying == false { self?.toggle() } }
+            return .success
+        }
+        commands.pauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in if self?.isPlaying == true { self?.toggle() } }
+            return .success
+        }
+        updateNowPlaying()
+    }
+
+    private func updateNowPlaying() {
+        let center = MPNowPlayingInfoCenter.default()
+        center.nowPlayingInfo = [MPMediaItemPropertyTitle: track.name, MPMediaItemPropertyArtist: "Simple Block"]
+        center.playbackState = isPlaying ? .playing : .paused
     }
 
     // MARK: Playback
