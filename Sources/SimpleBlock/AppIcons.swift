@@ -18,6 +18,9 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Glyph size as a share of the canvas. The thin scope needs more to weigh as much as other Dock icons.
+    private var glyphRatio: CGFloat { self == .scope ? 0.52 : 0.36 }
+
     /// The icon on the macOS grid: the tile is 80% of the canvas, corners at 22.5% of the tile.
     func image(pixels: Int) -> NSImage {
         let size = CGFloat(pixels)
@@ -31,7 +34,7 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
                 NSColor(srgbRed: 0x2B / 255, green: 0x2B / 255, blue: 0x29 / 255, alpha: 1).setFill()
                 path.fill()
             }
-            let config = NSImage.SymbolConfiguration(pointSize: size * 0.36, weight: .medium)
+            let config = NSImage.SymbolConfiguration(pointSize: size * glyphRatio, weight: .medium)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
             guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config)
             else { return true }

@@ -17,7 +17,7 @@ func render(_ px: Int) -> Data {
     let path = NSBezierPath(roundedRect: tile, xRadius: tile.width * 0.225, yRadius: tile.width * 0.225)
     NSColor(srgbRed: 0x2B / 255, green: 0x2B / 255, blue: 0x29 / 255, alpha: 1).setFill()
     path.fill()
-    let config = NSImage.SymbolConfiguration(pointSize: size * 0.36, weight: .medium)
+    let config = NSImage.SymbolConfiguration(pointSize: size * 0.52, weight: .medium)
         .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
     let glyph = NSImage(systemSymbolName: "scope", accessibilityDescription: nil)!.withSymbolConfiguration(config)!
     glyph.draw(in: NSRect(x: (size - glyph.size.width) / 2, y: (size - glyph.size.height) / 2,
