@@ -398,12 +398,14 @@ private struct PlayButton: View {
 }
 
 /// Music tab in Settings: now playing (play, ±30 s, position, Start over), what a track's end does, then Active and Library. Volume lives in the popover.
-/// Tracks move between the two with + and −, and up and down in Active with the arrows.
+/// Tracks move between the two with + and −, or with the arrows past the edge (going to Library asks first).
 struct MusicPane: View {
     @ObservedObject var music = Music.shared
     @Environment(\.uiScale) private var scale
     /// The track being renamed in place.
     @State private var renaming: String?
+    /// The last Active track whose down arrow was clicked, waiting on the confirm to go to Library.
+    @State private var leaving: Track?
 
     var body: some View {
         Pane {
@@ -441,7 +443,9 @@ struct MusicPane: View {
             Card {
                 if other.isEmpty { CardRow(divider: false) { Text("Every track is Active").foregroundStyle(.secondary) } }
                 ForEach(other) { track in
-                    CardRow(divider: track.id != other.first?.id) { row(track, active: false) }
+                    CardRow(divider: track.id != other.first?.id) {
+                        row(track, active: false, first: track.id == other.first?.id, last: track.id == other.last?.id)
+                    }
                 }
             }
             HStack {
@@ -450,6 +454,14 @@ struct MusicPane: View {
             }
         }
         .navigationTitle("Music")
+        .alert("Move \(leaving?.name ?? "") to Library?", isPresented: Binding(get: { leaving != nil }, set: { if !$0 { leaving = nil } })) {
+            Button("Move") { if let leaving { music.library.move(leaving.id, by: 1) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(music.library.active.count == 1
+                 ? "Active will be empty, so a track that ends plays again."
+                 : "Play next only goes through Active tracks.")
+        }
     }
 
     /// Big play button and the track's name.
@@ -478,8 +490,8 @@ struct MusicPane: View {
         .toggleStyle(.button)
     }
 
-    /// Play button, name (with the download state for Lofi Jazz), then up and down (Active only), rename, the
-    /// Active switch and remove last (download for Lofi Jazz). Library rows keep the arrows' space so columns line up.
+    /// Play button, name (with the download state for Lofi Jazz), then up and down, rename, the Active switch and
+    /// remove last (download for Lofi Jazz). The arrows run over Active then Library, see `MusicLibrary.move`.
     private func row(_ track: Track, active: Bool, first: Bool = false, last: Bool = false) -> some View {
         let current = track == music.track
         return HStack(spacing: 14 * scale) {
@@ -504,12 +516,14 @@ struct MusicPane: View {
                 }
             }
             Spacer()
-            if active {
-                IconButton(symbol: "arrow.up", help: "Move up") { music.library.move(track.id, by: -1) }.disabled(first)
-                IconButton(symbol: "arrow.down", help: "Move down") { music.library.move(track.id, by: 1) }.disabled(last)
-            } else {
-                Color.clear.frame(width: 60 * scale + 14 * scale, height: 30 * scale)
+            IconButton(symbol: "arrow.up", help: active || !first ? "Move up" : "Move up to Active") {
+                music.library.move(track.id, by: -1)
             }
+            .disabled(active && first)
+            IconButton(symbol: "arrow.down", help: !active || !last ? "Move down" : "Move down to Library") {
+                if active && last { leaving = track } else { music.library.move(track.id, by: 1) }
+            }
+            .disabled(!active && last)
             IconButton(symbol: "pencil", help: "Rename") { renaming = track.id }
             if active {
                 IconButton(symbol: "minus.circle", help: "Remove from Active") { music.library.deactivate(track.id) }

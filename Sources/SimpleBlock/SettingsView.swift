@@ -227,11 +227,13 @@ struct IconButton: View {
     let help: String
     let action: () -> Void
     @Environment(\.uiScale) private var scale
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .scaledFont(15)
+                .opacity(isEnabled ? 1 : 0.35)
                 .frame(width: 30 * scale, height: 30 * scale)
                 .contentShape(Rectangle())
         }

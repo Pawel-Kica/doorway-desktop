@@ -44,7 +44,24 @@ final class MusicTests: XCTestCase {
         music.move("rain", by: 1)
         XCTAssertEqual(music.active, ["piano", "lofi-jazz", "rain"])
         music.move("rain", by: 1)
-        XCTAssertEqual(music.active, ["piano", "lofi-jazz", "rain"], "The last one can't go down")
+        music.move("rain", by: 1)
+        XCTAssertEqual(music.active, ["piano", "lofi-jazz"], "The last one goes down to Library")
+    }
+
+    func testMoveCrossesBetweenActiveAndLibrary() {
+        var music = library(active: ["piano"])
+        music.move("piano", by: 1)
+        XCTAssertEqual(music.active, [])
+        XCTAssertEqual(music.otherTracks.map(\.id), ["piano", "lofi-jazz", "rain"], "The last Active one goes to the top of Library")
+        music.move("piano", by: 1)
+        XCTAssertEqual(music.otherTracks.map(\.id), ["lofi-jazz", "piano", "rain"])
+        music.move("rain", by: 1)
+        XCTAssertEqual(music.otherTracks.map(\.id), ["lofi-jazz", "piano", "rain"], "The last Library one can't go down")
+        music.move("rain", by: -1)
+        XCTAssertEqual(music.otherTracks.map(\.id), ["lofi-jazz", "rain", "piano"])
+        music.move("lofi-jazz", by: -1)
+        XCTAssertEqual(music.active, ["lofi-jazz"], "The first Library one goes to the end of Active")
+        XCTAssertEqual(music.otherTracks.map(\.id), ["rain", "piano"])
     }
 
     func testActiveAndOtherTracksSplitTheLibrary() {

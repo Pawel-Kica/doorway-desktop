@@ -54,10 +54,32 @@ public struct MusicLibrary: Codable, Equatable {
         active.append(id)
     }
 
-    /// Moves an Active track one spot up (-1) or down (+1). Past either end it stays put.
+    /// Moves a track one spot up (-1) or down (+1) in Active then Library, read as one list. The last Active track
+    /// goes down to the top of Library, the first Library track up to the end of Active. Past either end it stays put.
     public mutating func move(_ id: String, by offset: Int) {
-        guard let index = active.firstIndex(of: id), active.indices.contains(index + offset) else { return }
-        active.swapAt(index, index + offset)
+        let others = otherTracks.map(\.id)
+        if let index = active.firstIndex(of: id) {
+            if active.indices.contains(index + offset) {
+                active.swapAt(index, index + offset)
+            } else if offset > 0 {
+                deactivate(id)
+                if let top = others.first { place(id, before: top) }
+            }
+        } else if let index = others.firstIndex(of: id) {
+            if others.indices.contains(index + offset) {
+                let neighbor = others[index + offset]
+                offset < 0 ? place(id, before: neighbor) : place(neighbor, before: id)
+            } else if offset < 0 {
+                activate(id)
+            }
+        }
+    }
+
+    /// Puts track `id` right before track `other` in `tracks`, which sets Library's order.
+    private mutating func place(_ id: String, before other: String) {
+        guard let from = tracks.firstIndex(where: { $0.id == id }) else { return }
+        let track = tracks.remove(at: from)
+        tracks.insert(track, at: tracks.firstIndex { $0.id == other } ?? tracks.endIndex)
     }
 
     public mutating func deactivate(_ id: String) {
