@@ -34,6 +34,8 @@ final class AppModel: ObservableObject {
     /// Per-app unlock timers, started and stopped by Gatekeeper.
     @Published var timers = AppTimers()
     @Published private(set) var now = Date()
+    /// Whether Dock clicks on apps focus keeps out get stopped: Accessibility is granted. Set by Gatekeeper.
+    @Published var dockGuarded = false
 
     private let log = ReasonLog(url: ReasonLog.defaultURL)
 

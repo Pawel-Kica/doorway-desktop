@@ -23,6 +23,10 @@ final class Gatekeeper {
     /// The once-a-second sweep only hides a known one again: a stuck one never gets the backdrop or a new log line.
     private var focusLeaving: [NSRunningApplication: LeavingApp] = [:]
     private var focusWatch: Timer?
+    /// Stops Dock clicks on apps focus keeps out, once Accessibility is granted.
+    private lazy var dockGuard = DockGuard(
+        blocks: { [weak self] id in self?.focusStopsDockClick(id) ?? false },
+        stopped: { [weak self] id, url in self?.dockClickStopped(id, url: url) })
 
     init(model: AppModel) {
         self.model = model
@@ -34,6 +38,8 @@ final class Gatekeeper {
     /// Called once at launch.
     func start() {
         backdrop.prepare()
+        dockGuard.startIfAllowed()
+        dockGuard.armed = model.focus != nil
         let center = NSWorkspace.shared.notificationCenter
         // Unhide matters too: Electron apps like Signal unhide themselves when their window finishes loading.
         let names = [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didActivateApplicationNotification,
@@ -114,13 +120,32 @@ final class Gatekeeper {
         if cover, leaving.covers, !leaving.isStuck(at: now) { backdrop.show(for: .focus) }
         app.hide()
         watchFocusLeaving()
-        guard let id = app.bundleIdentifier, focusNoticed[id].map({ now.timeIntervalSince($0) > 3 }) ?? true else { return }
+        guard let id = app.bundleIdentifier else { return }
+        noticeFocusAttempt(id, name: app.localizedName ?? id, icon: app.icon, now: now)
+    }
+
+    /// Toast and `hidden` log entry, once per attempt: launch, activate and unhide fire together for one.
+    private func noticeFocusAttempt(_ id: String, name: String, icon: NSImage?, now: Date) {
+        guard focusNoticed[id].map({ now.timeIntervalSince($0) > 3 }) ?? true else { return }
         focusNoticed[id] = now
-        let name = app.localizedName ?? id
         model.record(LogEntry(ts: now, bundleId: id, app: name, kind: .hidden))
         let left = model.focus?.remaining(at: now) ?? 0
-        toast.show(icon: app.icon ?? NSApp.applicationIconImage,
+        toast.show(icon: icon ?? NSApp.applicationIconImage,
                    title: "\(name) is hidden while you focus", subtitle: "\(model.focusRules.names) · \(countdown(left)) left")
+    }
+
+    /// A Dock click gets stopped for an app focus keeps out, unless super lock has it: that one opens and gets quit
+    /// with its locked notice, as usual.
+    private func focusStopsDockClick(_ id: String) -> Bool {
+        let now = Date()
+        guard let focus = model.focus, focus.hides(id, allowed: model.focusRules.allowed, at: now) else { return false }
+        return model.rules.access(id, timers: model.timers, at: now) != .lock
+    }
+
+    private func dockClickStopped(_ id: String, url: URL) {
+        let name = NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.localizedName
+            ?? url.deletingPathExtension().lastPathComponent
+        noticeFocusAttempt(id, name: name, icon: NSWorkspace.shared.icon(forFile: url.path), now: Date())
     }
 
     /// Focus starting: close a prompt it makes pointless, hide every running regular app outside it, then open the
@@ -129,6 +154,7 @@ final class Gatekeeper {
     private func startFocus(_ session: FocusSession) {
         // A reason prompt for an app this focus hides has nothing left to ask. It closes quietly, no `cancelled` line.
         if let id = prompt.bundleId, session.hides(id, allowed: model.focusRules.allowed, at: Date()) { prompt.close() }
+        dockGuard.armed = true
         hideAll(outside: session)
         guard let first = model.focusRules.allowed.first else { return }
         // activate() on another app gets refused from the background. Launch Services brings it forward.
@@ -281,6 +307,9 @@ final class Gatekeeper {
         let now = model.tick()
         quitting = quitting.filter { $0.value > now }
         if model.focus != nil { sweepFocus(now: now) } else { focusLeaving.removeAll() }
+        dockGuard.startIfAllowed()
+        dockGuard.armed = model.focus != nil
+        if model.dockGuarded != dockGuard.isRunning { model.dockGuarded = dockGuard.isRunning }
         // Focus time up: log it and say so. The apps it hid stay hidden.
         if let focus = model.focus, !focus.isOn(at: now) {
             model.endFocus()

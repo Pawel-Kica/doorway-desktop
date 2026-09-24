@@ -36,5 +36,8 @@ PLIST
 # at launch.
 if [ -e "$APP/Icon"$'\r' ]; then mv -f "$APP/Icon"$'\r' /tmp/; fi
 xattr -cr "$APP"
-codesign --force --sign - "$APP"
+# Signed with the Apple Development certificate when there is one: macOS ties the Accessibility grant to the signature,
+# and an ad-hoc one changes with every build, which would drop the grant each time.
+IDENTITY="$(security find-identity -v -p codesigning | awk '/Apple Development/ { print $2; exit }')"
+codesign --force --sign "${IDENTITY:--}" "$APP"
 echo "Built $APP"
