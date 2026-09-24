@@ -4,23 +4,27 @@ import SwiftUI
 /// Menu bar icon, plus "Signal 3:12" while a timer runs (the one ending first), else a scope and "1:42" during focus.
 struct MenuBarLabel: View {
     @ObservedObject var model: AppModel
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        if let running = model.timers.soonest(now: model.now),
-           let app = model.rules.entry(running.bundleId) {
-            Image(systemName: "hand.raised.fill")
-            Text("\(app.name) \(countdown(running.remaining))")
-        } else if model.focusLeft > 0 {
-            Image(systemName: "scope")
-            Text(minuteCountdown(model.focusLeft))
-        } else {
-            Image(systemName: "hand.raised.fill")
+        Group {
+            if let running = model.timers.soonest(now: model.now),
+               let app = model.rules.entry(running.bundleId) {
+                Image(systemName: "hand.raised.fill")
+                Text("\(app.name) \(countdown(running.remaining))")
+            } else if model.focusLeft > 0 {
+                Image(systemName: "scope")
+                Text(minuteCountdown(model.focusLeft))
+            } else {
+                Image(systemName: "hand.raised.fill")
+            }
         }
+        .onAppear { SettingsOpener.open = { openSettings() } }
     }
 }
 
 /// The menu bar popover: what gates now, gated apps with timers, quick sessions, focus, Start session, Start focus,
-/// music, Focus screen, today's count, Settings, Quit. Drawn at the `uiScale` size, like Settings.
+/// music, Zone, today's count, Settings, Quit. Drawn at the `uiScale` size, like Settings.
 struct PopoverView: View {
     @ObservedObject var model: AppModel
     @AppStorage(UIScale.key) private var scale = UIScale.standard
@@ -111,10 +115,7 @@ struct PopoverView: View {
                 MusicControl(music: Music.shared, scale: scale)
             }
             .padding(.horizontal, 10 * scale).padding(.vertical, 6 * scale)
-            PopoverRow(symbol: "rectangle.on.rectangle", title: "Focus screen") {
-                dismiss()
-                FocusScreen.shared.show()
-            }
+            PopoverRow(symbol: "moon", title: "Zone") { open(.zone) }
             PopoverRow(symbol: "list.bullet", title: "Today's reasons",
                        trailing: "\(reasonsToday(model.entries, now: model.now))") { open(.history) }
             PopoverRow(symbol: "gearshape", title: "Settings…") { open(.sessions) }

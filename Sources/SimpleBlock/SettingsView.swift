@@ -2,12 +2,13 @@ import SimpleBlockCore
 import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case focus = "Focus", music = "Music", sessions = "Sessions", blocklists = "Blocklists", allowlists = "Allowlists",
+    case focus = "Focus", zone = "Zone", music = "Music", sessions = "Sessions", blocklists = "Blocklists", allowlists = "Allowlists",
          general = "General", history = "History"
     var id: Self { self }
     var symbol: String {
         switch self {
         case .focus: "scope"
+        case .zone: "moon"
         case .music: "music.note"
         case .sessions: "calendar"
         case .blocklists: "list.bullet.rectangle"
@@ -18,16 +19,17 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// Settings window: sidebar with Focus, Music, Sessions, Blocklists, Allowlists, General, History, drawn at the
+/// Settings window: sidebar with Focus, Zone, Music, Sessions, Blocklists, Allowlists, General, History, drawn at the
 /// `uiScale` size.
-/// ⌘+, ⌘− and ⌘0 change the size while it's open. The window can't be resized, it's 960 x 680 times the scale.
+/// ⌘+, ⌘− and ⌘0 change the size while it's open, ⌘B hides and shows the sidebar. The window can't be resized, it's 960 x 680 times the scale.
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     @AppStorage(UIScale.key) private var scale = UIScale.standard
+    @State private var columns = NavigationSplitViewVisibility.all
 
     var body: some View {
         let size = UIScale.size(960, 680, scale: scale)
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             List(SettingsTab.allCases, selection: Binding(get: { model.settingsTab }, set: { if let tab = $0 { model.settingsTab = tab } })) { tab in
                 Label(tab.rawValue, systemImage: tab.symbol)
                     .labelStyle(SidebarLabelStyle())
@@ -36,12 +38,13 @@ struct SettingsView: View {
                     .tag(tab)
             }
             .navigationSplitViewColumnWidth(210 * scale)
-            // Collapsing the sidebar left no way back in a window without a toolbar row.
+            // ⌘B instead: the toolbar button's collapse and expand glitched the sidebar in this fixed-size window.
             .toolbar(removing: .sidebarToggle)
         } detail: {
             Group {
                 switch model.settingsTab {
                 case .focus: FocusPane(model: model)
+                case .zone: ZonePane(model: model)
                 case .music: MusicPane()
                 case .sessions: SessionsPane(model: model)
                 case .blocklists:
@@ -61,6 +64,10 @@ struct SettingsView: View {
         // An exact size rather than a minimum: the window isn't resizable, so it shrinks back only this way.
         .frame(width: size.width, height: size.height)
         .background { SizeShortcuts(scale: $scale) }
+        .background {
+            Button("Toggle sidebar") { withAnimation { columns = columns == .detailOnly ? .all : .detailOnly } }
+                .keyboardShortcut("b").opacity(0).accessibilityHidden(true)
+        }
         // Settings windows get the preferences toolbar: title on top, then an empty row meant for tab icons.
         .background { WindowReader { $0.toolbarStyle = .unifiedCompact } }
         .environment(\.uiScale, scale)

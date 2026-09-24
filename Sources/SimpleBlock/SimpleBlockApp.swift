@@ -27,13 +27,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         registerLoginItem()
         gatekeeper.start()
-        // Open unless it was closed last time.
-        if UserDefaults.standard.object(forKey: FocusScreen.openKey) as? Bool ?? true { FocusScreen.shared.show(activate: false) }
     }
 
-    /// Opening Simple Block again (Raycast, Spotlight, Finder) brings up the Focus screen. The menu bar icon stays.
+    /// Opening Simple Block again (Raycast, Spotlight, Finder) brings up Settings. The menu bar icon stays.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        FocusScreen.shared.show()
+        SettingsOpener.open?()
+        NSApp.activate()
         return false
     }
 
@@ -42,4 +41,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard SMAppService.mainApp.status == .notRegistered else { return }
         do { try SMAppService.mainApp.register() } catch { NSLog("SimpleBlock: login item registration failed: \(error)") }
     }
+}
+
+/// SwiftUI opens Settings only through an environment action. The menu bar label, always on screen, hands it over here
+/// so the app delegate can open Settings too.
+@MainActor
+enum SettingsOpener {
+    static var open: (() -> Void)?
 }
