@@ -31,6 +31,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if UserDefaults.standard.object(forKey: FocusScreen.openKey) as? Bool ?? true { FocusScreen.shared.show(activate: false) }
     }
 
+    /// Opening Simple Block again (Raycast, Spotlight, Finder) brings up the Focus screen. The menu bar icon stays.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        FocusScreen.shared.show()
+        return false
+    }
+
     /// Adds itself as a login item while it isn't one. Ad-hoc builds may fail, which is fine.
     private func registerLoginItem() {
         guard SMAppService.mainApp.status == .notRegistered else { return }

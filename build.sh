@@ -1,11 +1,11 @@
 #!/bin/bash
-# Builds build/SimpleBlock.app: release binary + Info.plist (LSUIElement), ad-hoc signed.
+# Builds /Applications/Simple Block.app (so Raycast and Spotlight find it): release binary + Info.plist (LSUIElement), ad-hoc signed.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 swift build -c release --product SimpleBlock
 BIN="$(swift build -c release --show-bin-path)/SimpleBlock"
-APP=build/SimpleBlock.app
+APP="/Applications/Simple Block.app"
 
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SimpleBlock"
