@@ -21,7 +21,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
 /// Settings window: sidebar with Focus, Zone, Music, Sessions, Blocklists, Allowlists, General, History, drawn at the
 /// `uiScale` size.
-/// ⌘+, ⌘− and ⌘0 change the size while it's open, ⌘B hides and shows the sidebar. The window can't be resized, it's 960 x 680 times the scale.
+/// ⌘+, ⌘− and ⌘0 change the size while it's open, ⌘B hides and shows the sidebar, ⌘[ and ⌘] go to the previous and
+/// next tab. The window can't be resized, it's 960 x 680 times the scale.
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     @AppStorage(UIScale.key) private var scale = UIScale.standard
@@ -65,8 +66,14 @@ struct SettingsView: View {
         .frame(width: size.width, height: size.height)
         .background { SizeShortcuts(scale: $scale) }
         .background {
-            Button("Toggle sidebar") { withAnimation { columns = columns == .detailOnly ? .all : .detailOnly } }
-                .keyboardShortcut("b").opacity(0).accessibilityHidden(true)
+            Group {
+                Button("Toggle sidebar") { withAnimation { columns = columns == .detailOnly ? .all : .detailOnly } }
+                    .keyboardShortcut("b")
+                // Work with the sidebar hidden too: they're on the window, not the list.
+                Button("Previous tab") { model.settingsTab = model.settingsTab.stepped(by: -1) }.keyboardShortcut("[")
+                Button("Next tab") { model.settingsTab = model.settingsTab.stepped(by: 1) }.keyboardShortcut("]")
+            }
+            .opacity(0).accessibilityHidden(true)
         }
         // Settings windows get the preferences toolbar: title on top, then an empty row meant for tab icons.
         .background { WindowReader { $0.toolbarStyle = .unifiedCompact } }
