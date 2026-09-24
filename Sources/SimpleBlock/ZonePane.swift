@@ -25,6 +25,7 @@ struct ZonePane: View {
             .onTapGesture(perform: start)
         }
         .ignoresSafeArea()
+        .navigationTitle("Zone")
     }
 
     /// Starts focus off a click. With nothing allowed it can't, so it says where to fix that.
