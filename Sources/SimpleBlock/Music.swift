@@ -132,6 +132,16 @@ import SwiftUI
         }
     }
 
+    /// Jumps forward (+) or back (−) by `seconds`. Paused with no player yet (after a relaunch), it moves the saved spot.
+    func skip(_ seconds: Double) {
+        let from = player == nil ? position : player?.currentTime().seconds ?? 0
+        guard player == nil || clock != nil, from.isFinite else { return }
+        let target = max(0, from + seconds)
+        player?.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+        position = target
+        positions[track.id] = target
+    }
+
     /// Plays the current track from its saved spot. The seek waits for the item to be ready, playback waits for the seek.
     private func start() {
         stop()
@@ -291,7 +301,7 @@ import SwiftUI
     }
 }
 
-/// Music in the popover: a dropdown of tracks (Active, then Library), a round play button and a volume slider.
+/// Music in the popover: a dropdown of tracks (Active, then Library), a round play button, ±30 s and a volume slider.
 /// Picking a track plays it. Base size fits the popover, `scale` multiplies fonts and controls.
 struct MusicControl: View {
     @ObservedObject var music: Music
@@ -320,6 +330,7 @@ struct MusicControl: View {
 
             HStack(spacing: 12 * scale) {
                 PlayButton(music: music, size: 36 * scale)
+                SkipButtons(music: music, size: 17 * scale)
                 Image(systemName: "speaker.wave.3.fill", variableValue: music.volume)
                     .foregroundStyle(.secondary)
                     .frame(width: 24 * scale)
@@ -346,6 +357,28 @@ struct MusicControl: View {
     }
 }
 
+/// −30 s and +30 s buttons for the current track, glyphs `size` points.
+private struct SkipButtons: View {
+    @ObservedObject var music: Music
+    let size: CGFloat
+
+    var body: some View {
+        HStack(spacing: size * 0.6) {
+            button("gobackward.30", "Back 30 seconds", -30)
+            button("goforward.30", "Forward 30 seconds", 30)
+        }
+    }
+
+    private func button(_ symbol: String, _ help: String, _ seconds: Double) -> some View {
+        Button { music.skip(seconds) } label: {
+            Image(systemName: symbol).font(.system(size: size)).contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help(help)
+    }
+}
+
 /// Green round play / pause button for the current track.
 private struct PlayButton: View {
     @ObservedObject var music: Music
@@ -364,7 +397,7 @@ private struct PlayButton: View {
     }
 }
 
-/// Music tab in Settings: now playing, what a track's end does, then Active and Library. Volume lives in the popover.
+/// Music tab in Settings: now playing (play, ±30 s, position, Start over), what a track's end does, then Active and Library. Volume lives in the popover.
 /// Tracks move between the two with + and −, and up and down in Active with the arrows.
 struct MusicPane: View {
     @ObservedObject var music = Music.shared
@@ -423,6 +456,7 @@ struct MusicPane: View {
     private var nowPlaying: some View {
         HStack(spacing: 16 * scale) {
             PlayButton(music: music, size: 52 * scale)
+            SkipButtons(music: music, size: 22 * scale)
             RowTitle(title: music.track.name) {
                 if music.failed {
                     Text("Can't play this track").foregroundStyle(.red)
