@@ -301,7 +301,7 @@ private struct PlayButton: View {
 }
 
 /// Music tab in Settings: now playing with the volume, what a track's end does, then Active and Library.
-/// Tracks move between the two with + and − or by dragging; dropping on an Active track puts it before that one.
+/// Tracks move between the two with + and −, and up and down in Active with the arrows.
 struct MusicPane: View {
     @ObservedObject var music = Music.shared
     @Environment(\.uiScale) private var scale
@@ -331,18 +331,12 @@ struct MusicPane: View {
             .padding(.top, 8 * scale)
             let active = music.library.activeTracks
             Card {
-                if active.isEmpty { CardRow(divider: false) { Text("Drag tracks here or use +").foregroundStyle(.secondary) } }
-                ForEach(Array(active.enumerated()), id: \.element.id) { index, track in
-                    CardRow(divider: index > 0) { row(track, active: true) }
-                        .dropDestination(for: String.self) { ids, _ in
-                            ids.forEach { music.library.activate($0, at: index) }
-                            return true
-                        }
+                if active.isEmpty { CardRow(divider: false) { Text("Add tracks with +").foregroundStyle(.secondary) } }
+                ForEach(active) { track in
+                    CardRow(divider: track.id != active.first?.id) {
+                        row(track, active: true, first: track.id == active.first?.id, last: track.id == active.last?.id)
+                    }
                 }
-            }
-            .dropDestination(for: String.self) { ids, _ in
-                ids.forEach { music.library.activate($0) }
-                return true
             }
 
             SectionTitle(title: "Library") {}.padding(.top, 8 * scale)
@@ -352,10 +346,6 @@ struct MusicPane: View {
                 ForEach(other) { track in
                     CardRow(divider: track.id != other.first?.id) { row(track, active: false) }
                 }
-            }
-            .dropDestination(for: String.self) { ids, _ in
-                ids.forEach { music.library.deactivate($0) }
-                return true
             }
             HStack {
                 Spacer()
@@ -393,9 +383,9 @@ struct MusicPane: View {
         .toggleStyle(.button)
     }
 
-    /// Play button, name (with the download state for Lofi Jazz), then download, rename, remove and the
-    /// Active switch. Drags by its ID.
-    private func row(_ track: Track, active: Bool) -> some View {
+    /// Play button, name (with the download state for Lofi Jazz), then up and down (Active only), rename, the
+    /// Active switch and remove last (download for Lofi Jazz). Library rows keep the arrows' space so columns line up.
+    private func row(_ track: Track, active: Bool, first: Bool = false, last: Bool = false) -> some View {
         let current = track == music.track
         return HStack(spacing: 14 * scale) {
             Button { current ? music.toggle() : music.play(track) } label: {
@@ -419,22 +409,26 @@ struct MusicPane: View {
                 }
             }
             Spacer()
+            if active {
+                IconButton(symbol: "arrow.up", help: "Move up") { music.library.move(track.id, by: -1) }.disabled(first)
+                IconButton(symbol: "arrow.down", help: "Move down") { music.library.move(track.id, by: 1) }.disabled(last)
+            } else {
+                Color.clear.frame(width: 60 * scale + 14 * scale, height: 30 * scale)
+            }
             IconButton(symbol: "pencil", help: "Rename") { renaming = track.id }
+            if active {
+                IconButton(symbol: "minus.circle", help: "Remove from Active") { music.library.deactivate(track.id) }
+            } else {
+                IconButton(symbol: "plus.circle", help: "Add to Active") { music.library.activate(track.id) }
+            }
             // Download sits in the trash column, Lofi Jazz can't be removed.
             if track.isBuiltIn {
                 downloadButton
             } else {
                 IconButton(symbol: "trash", help: "Remove, the file goes to the Trash") { music.remove(track) }
             }
-            if active {
-                IconButton(symbol: "minus.circle", help: "Remove from Active") { music.library.deactivate(track.id) }
-            } else {
-                IconButton(symbol: "plus.circle", help: "Add to Active") { music.library.activate(track.id) }
-            }
         }
         .padding(.vertical, -4 * scale)
-        .contentShape(Rectangle())
-        .draggable(track.id)
     }
 
     @ViewBuilder private var downloadNote: some View {

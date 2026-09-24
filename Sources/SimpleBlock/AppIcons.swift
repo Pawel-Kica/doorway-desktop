@@ -1,10 +1,10 @@
 import AppKit
 
-/// App icons to pick in General (`appIcon` in UserDefaults): a white glyph on a #2B2B29 tile, like Paweł's Dock, or
+/// App icons to pick in General (`appIcon` in UserDefaults): a white scope on a #2B2B29 tile, like Paweł's Dock, or
 /// the old indigo hand. The pick goes on the Dock icon and onto the bundle, so Finder, Raycast and Spotlight show it
-/// too. The Hand is also Assets/AppIcon.icns, drawn the same way by scripts/make-icon.swift.
+/// too. The Scope is also Assets/AppIcon.icns, drawn the same way by scripts/make-icon.swift.
 enum AppIconChoice: String, CaseIterable, Identifiable {
-    case hand, scope, moon, shield, lock, leaf, indigo
+    case scope, indigo
 
     static let key = "appIcon"
     var id: Self { self }
@@ -13,12 +13,8 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
 
     private var symbol: String {
         switch self {
-        case .hand, .indigo: "hand.raised.fill"
         case .scope: "scope"
-        case .moon: "moon.fill"
-        case .shield: "shield.lefthalf.filled"
-        case .lock: "lock.fill"
-        case .leaf: "leaf.fill"
+        case .indigo: "hand.raised.fill"
         }
     }
 
@@ -46,18 +42,18 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The saved pick, the Hand when none.
+    /// The saved pick, the Scope when none (or a dropped icon).
     static var saved: AppIconChoice {
-        UserDefaults.standard.string(forKey: key).flatMap(AppIconChoice.init) ?? .hand
+        UserDefaults.standard.string(forKey: key).flatMap(AppIconChoice.init) ?? .scope
     }
 
-    /// Puts `saved` on the Dock icon and the bundle. The Hand is the bundle's own icon, so it clears the custom one.
+    /// Puts `saved` on the Dock icon and the bundle. The Scope is the bundle's own icon, so it clears the custom one.
     /// Called at launch and on every pick.
     @MainActor
     static func apply() {
         let choice = saved
         let image = choice.image(pixels: 1024)
         NSApp.applicationIconImage = image
-        NSWorkspace.shared.setIcon(choice == .hand ? nil : image, forFile: Bundle.main.bundlePath)
+        NSWorkspace.shared.setIcon(choice == .scope ? nil : image, forFile: Bundle.main.bundlePath)
     }
 }

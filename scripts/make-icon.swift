@@ -1,4 +1,4 @@
-// Renders the app icon (white raised hand on a #2B2B29 tile, the Hand in AppIcons.swift) into Assets/AppIcon.icns.
+// Renders the app icon (white scope on a #2B2B29 tile, the Scope in AppIcons.swift) into Assets/AppIcon.icns.
 // Run from app/: swift scripts/make-icon.swift
 import AppKit
 
@@ -19,9 +19,9 @@ func render(_ px: Int) -> Data {
     path.fill()
     let config = NSImage.SymbolConfiguration(pointSize: size * 0.36, weight: .medium)
         .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
-    let hand = NSImage(systemSymbolName: "hand.raised.fill", accessibilityDescription: nil)!.withSymbolConfiguration(config)!
-    hand.draw(in: NSRect(x: (size - hand.size.width) / 2, y: (size - hand.size.height) / 2,
-                         width: hand.size.width, height: hand.size.height))
+    let glyph = NSImage(systemSymbolName: "scope", accessibilityDescription: nil)!.withSymbolConfiguration(config)!
+    glyph.draw(in: NSRect(x: (size - glyph.size.width) / 2, y: (size - glyph.size.height) / 2,
+                          width: glyph.size.width, height: glyph.size.height))
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!
 }

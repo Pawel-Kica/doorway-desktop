@@ -551,7 +551,7 @@ private struct TimeField: View {
 private struct GeneralPane: View {
     @ObservedObject var model: AppModel
     @AppStorage(UIScale.key) private var scale = UIScale.standard
-    @AppStorage(AppIconChoice.key) private var appIcon = AppIconChoice.hand.rawValue
+    @AppStorage(AppIconChoice.key) private var appIcon = AppIconChoice.scope.rawValue
 
     var body: some View {
         Pane {
@@ -584,7 +584,7 @@ private struct GeneralPane: View {
                                         .resizable()
                                         .frame(width: 44 * scale, height: 44 * scale)
                                         .padding(2 * scale)
-                                        .background(appIcon == choice.rawValue ? Color.accentColor.opacity(0.35) : .clear,
+                                        .background(AppIconChoice(rawValue: appIcon) ?? .scope == choice ? Color.accentColor.opacity(0.35) : .clear,
                                                     in: RoundedRectangle(cornerRadius: 10 * scale))
                                 }
                                 .buttonStyle(.plain)

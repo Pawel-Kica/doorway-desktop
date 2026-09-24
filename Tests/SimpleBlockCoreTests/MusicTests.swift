@@ -25,19 +25,26 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(library(active: ["rain"]).next(after: "rain"), "rain", "One Active track loops")
     }
 
-    func testActivateAppendsInsertsAndMoves() {
+    func testActivateAppendsOnce() {
         var music = library(active: [])
         music.activate("rain")
         music.activate("piano")
+        music.activate("rain")
         XCTAssertEqual(music.active, ["rain", "piano"])
-        music.activate("lofi-jazz", at: 0)
-        XCTAssertEqual(music.active, ["lofi-jazz", "rain", "piano"])
-        music.activate("lofi-jazz", at: 2)
-        XCTAssertEqual(music.active, ["rain", "lofi-jazz", "piano"], "Moving down lands before the target")
-        music.activate("piano", at: 0)
-        XCTAssertEqual(music.active, ["piano", "rain", "lofi-jazz"])
         music.activate("gone")
-        XCTAssertEqual(music.active, ["piano", "rain", "lofi-jazz"], "Unknown IDs are ignored")
+        XCTAssertEqual(music.active, ["rain", "piano"], "Unknown IDs are ignored")
+    }
+
+    func testMoveStepsWithinActive() {
+        var music = library(active: ["rain", "piano", "lofi-jazz"])
+        music.move("piano", by: -1)
+        XCTAssertEqual(music.active, ["piano", "rain", "lofi-jazz"])
+        music.move("piano", by: -1)
+        XCTAssertEqual(music.active, ["piano", "rain", "lofi-jazz"], "The first one can't go up")
+        music.move("rain", by: 1)
+        XCTAssertEqual(music.active, ["piano", "lofi-jazz", "rain"])
+        music.move("rain", by: 1)
+        XCTAssertEqual(music.active, ["piano", "lofi-jazz", "rain"], "The last one can't go down")
     }
 
     func testActiveAndOtherTracksSplitTheLibrary() {

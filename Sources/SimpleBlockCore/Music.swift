@@ -48,15 +48,16 @@ public struct MusicLibrary: Codable, Equatable {
         return ids[(index + 1) % ids.count]
     }
 
-    /// Puts a track in Active before position `index` (the end when nil), or moves it there if it's in already.
-    public mutating func activate(_ id: String, at index: Int? = nil) {
-        guard tracks.contains(where: { $0.id == id }) else { return }
-        var position = index ?? active.count
-        if let old = active.firstIndex(of: id) {
-            active.remove(at: old)
-            if old < position { position -= 1 }
-        }
-        active.insert(id, at: min(max(position, 0), active.count))
+    /// Puts a track at the end of Active.
+    public mutating func activate(_ id: String) {
+        guard tracks.contains(where: { $0.id == id }), !active.contains(id) else { return }
+        active.append(id)
+    }
+
+    /// Moves an Active track one spot up (-1) or down (+1). Past either end it stays put.
+    public mutating func move(_ id: String, by offset: Int) {
+        guard let index = active.firstIndex(of: id), active.indices.contains(index + offset) else { return }
+        active.swapAt(index, index + offset)
     }
 
     public mutating func deactivate(_ id: String) {
