@@ -8,7 +8,10 @@ BIN="$(swift build -c release --show-bin-path)/SimpleBlock"
 APP="/Applications/Simple Block.app"
 
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/SimpleBlock"
+# Copied next to the old binary and renamed over it: writing into the binary of a running Simple Block kills it.
+# This way the running one keeps its copy and the new build starts on the next launch.
+cp "$BIN" "$APP/Contents/MacOS/SimpleBlock.new"
+mv -f "$APP/Contents/MacOS/SimpleBlock.new" "$APP/Contents/MacOS/SimpleBlock"
 cp Assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

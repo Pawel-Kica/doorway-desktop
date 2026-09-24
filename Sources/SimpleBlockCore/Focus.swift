@@ -81,6 +81,56 @@ public struct FocusSession: Codable, Equatable {
     }
 }
 
+/// The backdrop gives up on an app focus hid 2 s after the last attempt, or 10 s into a row of them, so an app that
+/// won't hide or keeps bringing itself back can't hold it up.
+public let focusCoverLimit: TimeInterval = 2
+public let focusCoverStreakLimit: TimeInterval = 10
+/// And it stays up at least this long after an attempt: it reads as a no instead of a blink, and an app whose windows
+/// are still on their way up from the Dock's click isn't taken for gone.
+public let focusCoverMinimum: TimeInterval = 0.25
+
+public enum Leaving: Equatable { case gone, leaving, stuck }
+
+/// An app focus hid, followed every 30 ms until it's really gone. Attempts until it's forgotten are the same row.
+public struct LeavingApp: Equatable {
+    public let first: Date
+    public private(set) var last: Date
+    /// False for apps focus hid as it started: they leave quietly, the backdrop never covers them.
+    public let covers: Bool
+
+    public init(at now: Date, covers: Bool = true) {
+        first = now
+        last = now
+        self.covers = covers
+    }
+
+    public mutating func attempted(at now: Date) { last = now }
+
+    /// Past the limits: the backdrop doesn't cover it any more.
+    public func isStuck(at now: Date) -> Bool {
+        now.timeIntervalSince(last) >= focusCoverLimit || now.timeIntervalSince(first) >= focusCoverStreakLimit
+    }
+
+    /// Gone once it's hidden, not in front and has no window on screen, from `focusCoverMinimum` after the last attempt.
+    /// Leaving until then: the backdrop stays up and it gets hidden again. Stuck past the limits.
+    public func state(active: Bool, hidden: Bool, onScreen: Bool, at now: Date) -> Leaving {
+        if hidden, !active, !onScreen, now.timeIntervalSince(last) >= focusCoverMinimum { return .gone }
+        return isStuck(at: now) ? .stuck : .leaving
+    }
+
+    /// Forgotten once it's been gone `focusCoverLimit` after the last attempt, so an app that keeps bringing itself back
+    /// stays one row and hits the streak limit. A stuck one is kept while it's up, so it isn't a new attempt every time.
+    public func isOver(active: Bool, hidden: Bool, onScreen: Bool, at now: Date) -> Bool {
+        state(active: active, hidden: hidden, onScreen: onScreen, at: now) == .gone && now.timeIntervalSince(last) >= focusCoverLimit
+    }
+}
+
+/// The once-a-second check under the notifications: an app outside focus that's in front, or not hidden with a window
+/// on screen, got past them. Clicking one in the Dock over and over sometimes did.
+public func slippedPastFocus(active: Bool, hidden: Bool, onScreen: Bool) -> Bool {
+    active || (!hidden && onScreen)
+}
+
 /// "25 min", "2 h", "1 h 30 min".
 public func durationText(_ minutes: Int) -> String {
     switch (minutes / 60, minutes % 60) {

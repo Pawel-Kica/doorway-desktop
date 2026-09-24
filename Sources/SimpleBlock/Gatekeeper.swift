@@ -4,12 +4,14 @@ import SimpleBlockCore
 
 /// The gating: watches apps launch, activate and unhide, hides blocklisted ones and asks for a reason,
 /// runs their timers, and quits them on Never mind, time up in the background and super lock.
-/// During focus it hides every regular app outside what focus allows and ends focus when time's up.
+/// During focus it hides every regular app outside what focus allows, behind the backdrop until it's really gone,
+/// and ends focus when time's up.
 /// What's gated comes from the model's rules, `Rules.access` decides; `FocusSession.hides` for focus.
 @MainActor
 final class Gatekeeper {
     private let model: AppModel
-    private let prompt = PromptController()
+    private let backdrop: Backdrop
+    private let prompt: PromptController
     private let toast = ToastController()
     private var focusStarts: AnyCancellable?
     /// When each app last got the focus toast and log entry. Launch, activate and unhide fire together for one attempt.
@@ -17,22 +19,30 @@ final class Gatekeeper {
     /// Apps told to quit, by process ID, with when to stop waiting. Signal told to quit while it's still loading
     /// takes ~10 s and unhides itself meanwhile, which used to open a second prompt. Until then it only gets hidden.
     private var quitting: [pid_t: Date] = [:]
+    /// Apps focus hid, watched every 30 ms until they're gone and forgotten a moment later (`LeavingApp.isOver`).
+    /// The once-a-second sweep only hides a known one again: a stuck one never gets the backdrop or a new log line.
+    private var focusLeaving: [NSRunningApplication: LeavingApp] = [:]
+    private var focusWatch: Timer?
 
     init(model: AppModel) {
         self.model = model
+        let backdrop = Backdrop()
+        self.backdrop = backdrop
+        prompt = PromptController(backdrop: backdrop)
     }
 
     /// Called once at launch.
     func start() {
-        prompt.prepare()
+        backdrop.prepare()
         let center = NSWorkspace.shared.notificationCenter
         // Unhide matters too: Electron apps like Signal unhide themselves when their window finishes loading.
         let names = [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didActivateApplicationNotification,
                      NSWorkspace.didUnhideApplicationNotification]
         for name in names {
+            let launched = name == NSWorkspace.didLaunchApplicationNotification
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                 let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-                MainActor.assumeIsolated { self?.gate(app) }
+                MainActor.assumeIsolated { self?.gate(app, launched: launched) }
             }
         }
         let ticker = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -56,8 +66,8 @@ final class Gatekeeper {
     }
 
     /// Super lock quits the app, focus hides apps outside it, the reason gate hides a gated app and asks for a reason.
-    /// In that order. Apps being quit only get hidden again.
-    private func gate(_ app: NSRunningApplication?, expired: Bool = false) {
+    /// In that order. Apps being quit only get hidden again. `launched`: from the launch notification alone.
+    private func gate(_ app: NSRunningApplication?, expired: Bool = false, launched: Bool = false) {
         guard let app else { return }
         let entry = model.rules.entry(app.bundleIdentifier)
         // Hiding the gated app hands activation to another app, which takes the keyboard from the prompt. Take it back.
@@ -74,7 +84,7 @@ final class Gatekeeper {
         if let entry, access == .lock {
             lock(app, entry, now: now)
         } else if focusHides(app, now: now) {
-            hideForFocus(app, now: now)
+            hideForFocus(app, cover: !launched, now: now)
         } else if let entry, access == .ask {
             // Backdrop first, it's instant. hide() waits on the other app and building the prompt takes a moment.
             prompt.cover()
@@ -94,9 +104,16 @@ final class Gatekeeper {
         return focus.hides(app.bundleIdentifier, allowed: model.focusRules.allowed, at: now)
     }
 
-    /// Hides an app outside focus, never quits it. Toast and `hidden` log entry once per attempt.
-    private func hideForFocus(_ app: NSRunningApplication, now: Date) {
+    /// Hides an app outside focus, never quits it. The backdrop goes up first, it's instant, while hiding waits on the
+    /// app itself: Chrome stayed readable for up to a second. A launch has no window yet, so it's only covered if one
+    /// shows up; an app launched in the background then never blurs the screen. Toast and `hidden` log entry once per attempt.
+    private func hideForFocus(_ app: NSRunningApplication, cover: Bool, now: Date) {
+        var leaving = focusLeaving[app] ?? LeavingApp(at: now)
+        leaving.attempted(at: now)
+        focusLeaving[app] = leaving
+        if cover, leaving.covers, !leaving.isStuck(at: now) { backdrop.show(for: .focus) }
         app.hide()
+        watchFocusLeaving()
         guard let id = app.bundleIdentifier, focusNoticed[id].map({ now.timeIntervalSince($0) > 3 }) ?? true else { return }
         focusNoticed[id] = now
         let name = app.localizedName ?? id
@@ -120,16 +137,87 @@ final class Gatekeeper {
         NSWorkspace.shared.openApplication(at: process?.bundleURL ?? URL(fileURLWithPath: first.path), configuration: .init())
     }
 
-    /// Hides every visible regular app outside focus. Not attempts, so no toast or log entry.
+    /// Every 30 ms while apps focus hid are on their way out: hides them again while they're in front or not hidden
+    /// (a hide sent while the Dock was activating the app again got lost), covers one that shows up, and lifts the
+    /// backdrop once none is left.
+    private func watchFocusLeaving() {
+        guard focusWatch == nil else { return }
+        let timer = Timer(timeInterval: 0.03, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkFocusLeaving() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        focusWatch = timer
+    }
+
+    private func checkFocusLeaving() {
+        let now = Date()
+        let onScreen = appsOnScreen()
+        var watching = false
+        for (app, leaving) in focusLeaving {
+            // Focus ended, the app got allowed or it's being quit meanwhile.
+            guard !app.isTerminated, quitting[app.processIdentifier] == nil, focusHides(app, now: now) else {
+                focusLeaving[app] = nil
+                continue
+            }
+            let windowUp = onScreen.contains(app.processIdentifier)
+            guard leaving.state(active: app.isActive, hidden: app.isHidden, onScreen: windowUp, at: now) == .leaving else {
+                continue
+            }
+            watching = true
+            if leaving.covers, app.isActive || windowUp, !backdrop.isHeld(by: .focus) { backdrop.show(for: .focus) }
+            if app.isActive || !app.isHidden { app.hide() }
+        }
+        guard !watching else { return }
+        focusWatch?.invalidate()
+        focusWatch = nil
+        backdrop.release(.focus, fade: true)
+    }
+
+    /// Once a second during focus, under the notifications: an app outside focus that got past them is hidden like
+    /// any other attempt. A known one only gets hidden again and handed to the watcher. Apps being quit are left to that.
+    private func sweepFocus(now: Date) {
+        let onScreen = appsOnScreen()
+        focusLeaving = focusLeaving.filter { app, leaving in
+            !app.isTerminated && !leaving.isOver(active: app.isActive, hidden: app.isHidden,
+                                                 onScreen: onScreen.contains(app.processIdentifier), at: now)
+        }
+        for app in NSWorkspace.shared.runningApplications where quitting[app.processIdentifier] == nil
+            && slippedPastFocus(active: app.isActive, hidden: app.isHidden, onScreen: onScreen.contains(app.processIdentifier))
+            && focusHides(app, now: now) {
+            if focusLeaving[app] == nil {
+                hideForFocus(app, cover: true, now: now)
+            } else {
+                app.hide()
+                watchFocusLeaving()
+            }
+        }
+    }
+
+    /// Process IDs with a normal, visible window on screen right now, straight from the window server. Owner and layer
+    /// need no Screen Recording permission.
+    private func appsOnScreen() -> Set<pid_t> {
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        return Set(windows.compactMap { window in
+            guard window[kCGWindowLayer as String] as? Int == 0,
+                  (window[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { return nil }
+            return window[kCGWindowOwnerPID as String] as? pid_t
+        })
+    }
+
+    /// Hides every visible regular app outside focus. Not attempts, so no toast, log entry or backdrop: they're watched
+    /// quietly, and the sweep won't take a slow one (Chrome) for an attempt.
     private func hideAll(outside session: FocusSession) {
         let now = Date()
         let allowed = model.focusRules.allowed
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && !app.isHidden {
             guard let id = app.bundleIdentifier, session.hides(id, allowed: allowed, at: now) else { continue }
             app.hide()
+            focusLeaving[app] = LeavingApp(at: now, covers: false)
             // Hiding one app can activate another for a moment, that's not an attempt either.
             focusNoticed[id] = now
         }
+        watchFocusLeaving()
     }
 
     /// Hides and quits a gated app. A normal quit: forceTerminate() on a loading Signal left it running,
@@ -192,6 +280,7 @@ final class Gatekeeper {
     private func tick() {
         let now = model.tick()
         quitting = quitting.filter { $0.value > now }
+        if model.focus != nil { sweepFocus(now: now) } else { focusLeaving.removeAll() }
         // Focus time up: log it and say so. The apps it hid stay hidden.
         if let focus = model.focus, !focus.isOn(at: now) {
             model.endFocus()

@@ -32,17 +32,21 @@ private final class PromptText: ObservableObject {
     @Published var value = ""
 }
 
-/// The reason prompt: a glass panel above all windows, over a blurred backdrop on every screen,
-/// so the gated app's window can't be seen even when it briefly unhides itself. One at a time.
+/// The reason prompt: a glass panel above all windows, over the backdrop, so the gated app's window can't be seen
+/// even when it briefly unhides itself. One at a time.
 /// ⌘↵ submits once there are enough words, Esc cancels. The same panel shows the super lock notice.
 @MainActor
 final class PromptController {
+    private let backdrop: Backdrop
     private var panel: NSPanel?
-    private var shields: [NSPanel] = []
     private var keyMonitor: Any?
     /// Bundle ID of the app the prompt is for, nil when closed.
     private(set) var bundleId: String?
     var isShowing: Bool { panel != nil }
+
+    init(backdrop: Backdrop) {
+        self.backdrop = backdrop
+    }
 
     func show(app: GatedApp, trigger: Trigger, nthToday: Int, minutes: Int,
               onSubmit: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
@@ -110,20 +114,9 @@ final class PromptController {
         bringToFront()
     }
 
-    /// Builds the backdrop windows ahead of time (again if the screens changed), so cover() is only an order-front.
-    func prepare() {
-        guard shields.map(\.frame) != NSScreen.screens.map(\.frame) else { return }
-        for shield in shields { shield.close() }
-        shields = NSScreen.screens.map { Self.shield(frame: $0.frame) }
-        for shield in shields { shield.displayIfNeeded() }
-    }
-
     /// Puts the backdrop up on every screen. Instant, so gating calls it before anything slower.
     func cover() {
-        prepare()
-        for shield in shields { shield.orderFrontRegardless() }
-        // Push it to the screen now, not when this run loop pass ends after the slower prompt build.
-        CATransaction.flush()
+        backdrop.show(for: .prompt)
     }
 
     func bringToFront() {
@@ -139,33 +132,8 @@ final class PromptController {
         keyMonitor = nil
         panel?.close()
         panel = nil
-        for shield in shields { shield.orderOut(nil) }
+        backdrop.release(.prompt)
         bundleId = nil
-    }
-
-    /// Blurred, dimmed backdrop for one screen, above normal windows and below the prompt.
-    /// The blur keeps a gated app that briefly unhides itself unreadable. Swallows clicks without activating anything.
-    private static func shield(frame: NSRect) -> NSPanel {
-        let shield = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        shield.setFrame(frame, display: false)
-        let blur = NSVisualEffectView()
-        blur.material = .fullScreenUI
-        blur.blendingMode = .behindWindow
-        blur.state = .active
-        blur.appearance = NSAppearance(named: .darkAqua)
-        shield.contentView = blur
-        let dim = NSView(frame: blur.bounds)
-        dim.wantsLayer = true
-        dim.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.35).cgColor
-        dim.autoresizingMask = [.width, .height]
-        blur.addSubview(dim)
-        shield.isOpaque = false
-        shield.backgroundColor = .clear
-        shield.level = .floating
-        shield.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        shield.isReleasedWhenClosed = false
-        shield.hidesOnDeactivate = false
-        return shield
     }
 }
 

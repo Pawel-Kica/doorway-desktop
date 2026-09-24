@@ -30,7 +30,8 @@ final class ToastController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.level = .floating
+        // Above the backdrop, which focus puts up again on every attempt.
+        panel.level = .modalPanel
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.appearance = NSAppearance(named: .darkAqua)
         let mouse = NSEvent.mouseLocation

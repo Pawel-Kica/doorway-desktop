@@ -119,6 +119,79 @@ final class FocusTests: XCTestCase {
         XCTAssertEqual(apps, [obsidian, todoist])
     }
 
+    func testLeavingIsGoneOnlyWhenHiddenOutOfFrontAndOffScreen() {
+        let app = LeavingApp(at: start)
+        let soon = start.addingTimeInterval(focusCoverMinimum)
+        XCTAssertEqual(app.state(active: false, hidden: true, onScreen: false, at: soon), .gone)
+        XCTAssertEqual(app.state(active: false, hidden: true, onScreen: false, at: start.addingTimeInterval(0.03)), .leaving,
+                       "Covered a moment at least, its windows may still be coming up")
+        XCTAssertEqual(app.state(active: true, hidden: true, onScreen: false, at: soon), .leaving, "Still in front")
+        XCTAssertEqual(app.state(active: false, hidden: false, onScreen: false, at: soon), .leaving, "Hide not done")
+        XCTAssertEqual(app.state(active: false, hidden: true, onScreen: true, at: soon), .leaving,
+                       "Marked hidden, windows still up")
+        XCTAssertEqual(app.state(active: false, hidden: true, onScreen: false, at: minutes(5)), .gone)
+    }
+
+    func testLeavingGetsStuckAfterTheLastAttempt() {
+        let app = LeavingApp(at: start)
+        XCTAssertEqual(app.state(active: true, hidden: false, onScreen: true,
+                                 at: start.addingTimeInterval(focusCoverLimit - 0.01)), .leaving)
+        XCTAssertEqual(app.state(active: true, hidden: false, onScreen: true,
+                                 at: start.addingTimeInterval(focusCoverLimit)), .stuck)
+        XCTAssertEqual(app.state(active: false, hidden: true, onScreen: true, at: start.addingTimeInterval(5)), .stuck,
+                       "A window that stays up while hidden")
+    }
+
+    func testAttemptsInARowKeepItLeavingUpToTheStreakLimit() {
+        var app = LeavingApp(at: start)
+        // Clicking it in the Dock every second.
+        for second in 1..<Int(focusCoverStreakLimit) {
+            let now = start.addingTimeInterval(TimeInterval(second))
+            app.attempted(at: now)
+            XCTAssertEqual(app.state(active: true, hidden: false, onScreen: true, at: now.addingTimeInterval(0.5)), .leaving)
+        }
+        let end = start.addingTimeInterval(focusCoverStreakLimit)
+        app.attempted(at: end)
+        XCTAssertTrue(app.isStuck(at: end), "An app that keeps bringing itself back can't hold the backdrop up")
+        XCTAssertEqual(app.first, start)
+    }
+
+    func testForgottenOnlyAfterBeingGoneAWhile() {
+        let app = LeavingApp(at: start)
+        let gone = (active: false, hidden: true, onScreen: false)
+        XCTAssertFalse(app.isOver(active: gone.active, hidden: gone.hidden, onScreen: gone.onScreen,
+                                  at: start.addingTimeInterval(1)), "Gone, but a quick re-attempt is the same row")
+        XCTAssertTrue(app.isOver(active: gone.active, hidden: gone.hidden, onScreen: gone.onScreen,
+                                 at: start.addingTimeInterval(focusCoverLimit)))
+        XCTAssertFalse(app.isOver(active: true, hidden: false, onScreen: true, at: minutes(5)), "Stuck and still up")
+    }
+
+    func testAnAppThatKeepsComingBackHitsTheStreakLimit() {
+        var app = LeavingApp(at: start)
+        // Hides fine, then brings itself back every second.
+        for second in 1..<Int(focusCoverStreakLimit) {
+            let now = start.addingTimeInterval(TimeInterval(second))
+            XCTAssertFalse(app.isOver(active: false, hidden: true, onScreen: false, at: now))
+            app.attempted(at: now)
+        }
+        XCTAssertTrue(app.isStuck(at: start.addingTimeInterval(focusCoverStreakLimit)))
+    }
+
+    func testCoversUnlessHiddenAsFocusStarted() {
+        XCTAssertTrue(LeavingApp(at: start).covers)
+        var quiet = LeavingApp(at: start, covers: false)
+        quiet.attempted(at: start.addingTimeInterval(1))
+        XCTAssertFalse(quiet.covers)
+    }
+
+    func testSlippedPastFocus() {
+        XCTAssertTrue(slippedPastFocus(active: true, hidden: false, onScreen: true))
+        XCTAssertTrue(slippedPastFocus(active: true, hidden: true, onScreen: false), "In front counts even when marked hidden")
+        XCTAssertTrue(slippedPastFocus(active: false, hidden: false, onScreen: true))
+        XCTAssertFalse(slippedPastFocus(active: false, hidden: false, onScreen: false), "Running without a window")
+        XCTAssertFalse(slippedPastFocus(active: false, hidden: true, onScreen: true), "A window that stays up while hidden")
+    }
+
     func testMinuteCountdownRoundsUp() {
         XCTAssertEqual(minuteCountdown(102 * 60), "1:42")
         XCTAssertEqual(minuteCountdown(102 * 60 - 30), "1:42")
