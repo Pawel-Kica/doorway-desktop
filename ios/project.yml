@@ -1,0 +1,54 @@
+# XcodeGen spec for SimpleBlock.xcodeproj. After editing, run `xcodegen` in app/ios and commit the regenerated project.
+name: SimpleBlock
+options:
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "27.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: SAU6D4D9AT
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: YES
+targets:
+  SimpleBlock:
+    type: application
+    platform: iOS
+    # Core is compiled straight into the app, no package dependency.
+    sources:
+      - App
+      - Core
+    settings:
+      base:
+        PRODUCT_NAME: SimpleBlock
+        PRODUCT_BUNDLE_IDENTIFIER: com.pawel.simple-block.ios
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_FILE: App/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Simple Block
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  SimpleBlockUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    dependencies:
+      - target: SimpleBlock
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pawel.simple-block.ios.uitests
+        TARGETED_DEVICE_FAMILY: "1"
+schemes:
+  SimpleBlock:
+    build:
+      targets:
+        SimpleBlock: all
+        SimpleBlockUITests: [test]
+    test:
+      targets:
+        - SimpleBlockUITests
