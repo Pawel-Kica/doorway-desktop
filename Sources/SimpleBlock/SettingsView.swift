@@ -322,8 +322,8 @@ private struct SessionsPane: View {
     }
 }
 
-/// A scheduled session folded to one row: chevron, its name (or blocklists), "18:00 to 10:00 · Every day" (plus a lock with super lock),
-/// then the status and the enabled switch. Clicking anywhere but the switch opens or folds it.
+/// A scheduled session folded to one row: chevron, its name (or blocklists), "18:00 to 10:00 · Every day",
+/// then a Super lock badge if it has one, the status and the enabled switch. Clicking anywhere but the switch opens or folds it.
 private struct SessionHeader: View {
     @ObservedObject var model: AppModel
     @Binding var session: ScheduledSession
@@ -343,11 +343,9 @@ private struct SessionHeader: View {
                         .frame(width: 16 * scale)
                     RowTitle(title: model.rules.title(session)) {
                         Text("\(times) · \(session.schedule.daysSummary())")
-                        if session.superLock {
-                            Image(systemName: "lock.fill").foregroundStyle(frozen ? Color.red : Color.secondary)
-                        }
                     }
                     Spacer(minLength: 12 * scale)
+                    if session.superLock { SuperLockBadge(frozen: frozen) }
                     status
                 }
                 .contentShape(Rectangle())
@@ -864,6 +862,21 @@ private struct HistoryRow: View {
                 Image(systemName: "app.dashed").scaledFont(18).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// "Super lock" pill in a session header. Red while it's on and freezes the session, gray otherwise.
+private struct SuperLockBadge: View {
+    let frozen: Bool
+    @Environment(\.uiScale) private var scale
+
+    var body: some View {
+        let color: Color = frozen ? .red : .gray
+        Label("Super lock", systemImage: "lock.fill")
+            .scaledFont(12, weight: .semibold)
+            .foregroundStyle(color)
+            .padding(.horizontal, 8 * scale).padding(.vertical, 2 * scale)
+            .background(color.opacity(0.16), in: Capsule())
     }
 }
 
