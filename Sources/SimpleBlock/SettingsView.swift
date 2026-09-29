@@ -296,8 +296,6 @@ private struct SessionsPane: View {
                     CardRow(divider: false) { Text("No sessions").foregroundStyle(.secondary) }
                 }
             }
-            Text("Same start and end means all day. An end before the start runs past midnight.")
-                .noteFont().foregroundStyle(.secondary).padding(.leading, 4)
         }
         .navigationTitle("Sessions")
     }
@@ -491,15 +489,13 @@ private struct SessionEditor: View {
                     }
                 }
                 CardRow {
-                    SettingRow(title: "Super lock",
-                               note: "Apps never open while it's on, no reason asked. The session can't be changed until it ends.") {
+                    SettingRow(title: "Super lock", note: "Apps don't open at all, and the session can't be changed until it ends.") {
                         Toggle("Super lock", isOn: $session.superLock).toggleStyle(.scaledSwitch).labelsHidden()
                     }
                 }
                 if !session.superLock {
                     CardRow {
-                        SettingRow(title: "Time per reason",
-                                   note: "Fixed from the moment you give a reason. When it ends, the app hides and asks again.") {
+                        SettingRow(title: "Time per reason") {
                             // Buttons instead of a Stepper, which doesn't grow with the scale. The symbols go in a Text
                             // so both get a full line's height; a bare minus made a shorter button than the plus.
                             HStack(spacing: 8 * scale) {
@@ -585,7 +581,7 @@ private struct GeneralPane: View {
         Pane {
             Card {
                 CardRow(divider: false) {
-                    SettingRow(title: "Size", note: "⌘+ and ⌘− also work, ⌘0 goes back to \(Int(UIScale.standard * 100))%.") {
+                    SettingRow(title: "Size") {
                         // Chips instead of a segmented picker, which doesn't grow with the scale.
                         HStack(spacing: 6 * scale) {
                             ForEach(UIScale.choices, id: \.self) { choice in
@@ -598,7 +594,7 @@ private struct GeneralPane: View {
                     }
                 }
                 CardRow {
-                    SettingRow(title: "App icon", note: "In the Dock, Finder and Raycast.") {
+                    SettingRow(title: "App icon") {
                         HStack(spacing: 4 * scale) {
                             ForEach(AppIconChoice.allCases) { choice in
                                 Button {

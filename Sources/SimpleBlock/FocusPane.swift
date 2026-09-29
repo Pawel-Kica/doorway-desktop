@@ -44,17 +44,13 @@ struct FocusPane: View {
             if !model.dockGuarded {
                 Card {
                     CardRow(divider: false) {
-                        SettingRow(title: "Stop Dock clicks",
-                                   note: "A Dock click can show an app outside focus for a frame before it's hidden. "
-                                       + "Allow Simple Block in Accessibility and the click is stopped instead.") {
+                        SettingRow(title: "Stop Dock clicks", note: "Needs Accessibility, or a Dock click flashes the app for a frame.") {
                             Button { DockGuard.askForAccess() } label: { Text("Allow…").bezelPadding() }
                         }
                     }
                 }
                 .padding(.top, 12 * scale)
             }
-            Text("Everything else stays open, just hidden. Finder and Simple Block always work.")
-                .noteFont().foregroundStyle(.secondary).padding(.leading, 4 * scale)
         }
         .navigationTitle("Focus")
     }

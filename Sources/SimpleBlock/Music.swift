@@ -412,9 +412,7 @@ struct MusicPane: View {
             Card { CardRow(divider: false) { nowPlaying } }
             Card {
                 CardRow(divider: false) {
-                    SettingRow(title: "When a track ends",
-                               note: music.library.repeatTrack ? "It plays again. Active isn't used."
-                                   : "The next Active track plays, after the last one it starts over.") {
+                    SettingRow(title: "When a track ends") {
                         HStack(spacing: 6 * scale) {
                             chip("Play next", repeatTrack: false)
                             chip("Repeat", repeatTrack: true)
@@ -546,10 +544,6 @@ struct MusicPane: View {
                 Text("Downloading, \(Int(progress * 100))%")
             } else if music.downloadFailed {
                 Text("Download failed").foregroundStyle(.red)
-            } else if music.isDownloaded(.lofiJazz) {
-                Text("8 h mix")
-            } else {
-                Text("8 h mix, streams until downloaded")
             }
         }
         .noteFont().foregroundStyle(.secondary)
