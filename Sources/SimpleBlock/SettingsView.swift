@@ -615,7 +615,7 @@ private struct GeneralPane: View {
 }
 
 /// The Blocklists and Allowlists tabs, same UI: a section per list with rename and delete in its title, its apps with
-/// rename and remove, Add app… under each list, Add blocklist… (or allowlist) at the bottom.
+/// rename and remove, Add app… under each list, Add blocklist (or allowlist) at the top like Add session.
 private struct ListsPane: View {
     @ObservedObject var model: AppModel
     /// "Blocklist" or "Allowlist".
@@ -638,6 +638,12 @@ private struct ListsPane: View {
 
     var body: some View {
         Pane {
+            SectionTitle(title: "\(noun)s") {
+                Button { newName = ""; adding = true } label: {
+                    Label("Add \(noun.lowercased())", systemImage: "plus").bezelPadding()
+                }
+                .buttonStyle(.borderedProminent)
+            }
             ForEach($lists) { $list in
                 let isFrozen = frozen(list.id)
                 if renamingList == list.id {
@@ -695,10 +701,6 @@ private struct ListsPane: View {
             }
             if lists.isEmpty {
                 Card { CardRow(divider: false) { Text("No \(noun.lowercased())s").foregroundStyle(.secondary) } }
-            }
-            HStack {
-                Spacer()
-                Button { newName = ""; adding = true } label: { Text("Add \(noun.lowercased())…").bezelPadding() }
             }
         }
         .navigationTitle("\(noun)s")
