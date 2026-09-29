@@ -19,7 +19,7 @@ final class AppModel: ObservableObject {
             save(rules.quickSessions, "quickSessions")
         }
     }
-    /// What focus allows: allowlists, the ones picked for focus, apps on their own. Edits during a focus apply right away.
+    /// What focus allows: allowlists and the ones picked for focus. Edits during a focus apply right away.
     @Published var focusRules: FocusRules {
         didSet { saveFocusRules() }
     }
@@ -43,11 +43,10 @@ final class AppModel: ObservableObject {
         let defaults = UserDefaults.standard
         minutesPerReason = defaults.object(forKey: "minutesPerReason") as? Int ?? 5
         entries = log.readAll()
-        let ownApps: [GatedApp] = Self.load("focusApps") ?? []
         let allowlists: [Allowlist]? = Self.load("allowlists")
-        // Before allowlists focus had only its own apps: they become the list "Deep work".
-        focusRules = allowlists.map { FocusRules(allowlists: $0, picked: Self.load("focusAllowlists") ?? [], apps: ownApps) }
-            ?? .migrated(apps: ownApps)
+        // Before allowlists focus had only its own apps (`focusApps`, read only here): they become the list "Deep work".
+        focusRules = allowlists.map { FocusRules(allowlists: $0, picked: Self.load("focusAllowlists") ?? []) }
+            ?? .migrated(apps: Self.load("focusApps") ?? [])
         if var lists: [Blocklist] = Self.load("blocklists") {
             // Sites (Chrome tabs and web apps) were dropped; their entries had a URL as the path.
             for i in lists.indices { lists[i].entries.removeAll { $0.path.contains("://") } }
@@ -87,7 +86,6 @@ final class AppModel: ObservableObject {
     private func saveFocusRules() {
         save(focusRules.allowlists, "allowlists")
         save(focusRules.picked, "focusAllowlists")
-        save(focusRules.apps, "focusApps")
     }
 
     /// Moves the clock on and ends quick sessions that ran out. Gatekeeper calls it every second.
@@ -152,26 +150,12 @@ final class AppModel: ObservableObject {
                  reason: focusRules.names, minutes: session.minutesRun(at: now))
     }
 
-    /// Adds apps picked in /Applications to the apps focus allows on their own.
-    func addFocusApps() {
-        focusRules.apps.add(pickApps())
-    }
-
-    func addFocusApp(_ app: GatedApp) {
-        focusRules.apps.add([app])
-    }
-
     /// A change that would leave a running focus allowing nothing (everything but Finder hidden) waits until it ends.
     func canChangeFocus(_ change: (inout FocusRules) -> Void) -> Bool {
         guard focusLeft > 0 else { return true }
         var changed = focusRules
         change(&changed)
         return !changed.allowed.isEmpty
-    }
-
-    func removeFocusApp(_ bundleId: String) {
-        let change: (inout FocusRules) -> Void = { $0.apps.removeAll { $0.bundleId == bundleId } }
-        if canChangeFocus(change) { change(&focusRules) }
     }
 
     /// Apps picked in an open panel on /Applications.

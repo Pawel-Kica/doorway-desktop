@@ -2,7 +2,7 @@ import AppKit
 import SimpleBlockCore
 import SwiftUI
 
-/// Focus tab. Off: the allowlists as toggle chips, apps allowed on their own as chips, a length and Start focus.
+/// Focus tab. Off: the allowlists as toggle chips, a length and Start focus.
 /// On: a big countdown and End focus. What's allowed stays editable either way, edits during a focus apply right away.
 struct FocusPane: View {
     @ObservedObject var model: AppModel
@@ -24,28 +24,6 @@ struct FocusPane: View {
                     .padding(.vertical, -4 * scale).padding(.trailing, 6 * scale)
             }
             allowlistsCard.padding(.bottom, 12 * scale)
-            SectionTitle(title: "Also allow") {}
-            Card {
-                CardRow(divider: false) {
-                    if model.focusRules.apps.isEmpty {
-                        Text("No apps").foregroundStyle(.secondary)
-                    } else {
-                        FlowLayout(spacing: 8 * scale) {
-                            ForEach(model.focusRules.apps) { app in
-                                AppChip(app: app, removable: model.canChangeFocus { $0.apps.removeAll { $0.id == app.id } }) {
-                                    model.removeFocusApp(app.bundleId)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            HStack(spacing: 10 * scale) {
-                Spacer()
-                AddRunningAppButton(model: model)
-                Button { model.addFocusApps() } label: { Text("Add app…").bezelPadding() }
-            }
-            .padding(.bottom, 12 * scale)
             if !on {
                 Card {
                     CardRow(divider: false) {
@@ -105,10 +83,10 @@ struct FocusPane: View {
                     }
                 }
             }
-            if !rules.listed.isEmpty {
+            if !rules.allowed.isEmpty {
                 CardRow {
                     FlowLayout(spacing: 14 * scale) {
-                        ForEach(rules.listed) { app in
+                        ForEach(rules.allowed) { app in
                             HStack(spacing: 6 * scale) {
                                 AppIcon(app: app, size: 20 * scale)
                                 Text(app.name).lineLimit(1)
@@ -159,84 +137,6 @@ struct FocusPane: View {
         .buttonStyle(.borderedProminent)
         .disabled(model.focusRules.allowed.isEmpty)
     }
-}
-
-/// An allowed app as a chip: icon, name and a remove x, disabled on the last app while focus is on.
-private struct AppChip: View {
-    let app: GatedApp
-    let removable: Bool
-    let remove: () -> Void
-    @Environment(\.uiScale) private var scale
-
-    var body: some View {
-        HStack(spacing: 8 * scale) {
-            AppIcon(app: app, size: 24 * scale)
-            Text(app.name).lineLimit(1)
-            Button(action: remove) {
-                Image(systemName: "xmark.circle.fill").scaledFont(14)
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .disabled(!removable)
-            .help(removable ? "Remove \(app.name)" : "Focus needs at least one app")
-            .accessibilityLabel("Remove \(app.name)")
-        }
-        .padding(.leading, 7 * scale).padding(.trailing, 9 * scale).padding(.vertical, 5 * scale)
-        .background(Color.primary.opacity(0.07), in: Capsule())
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1)))
-    }
-}
-
-/// "Add running app": pops a menu of the regular apps running now that focus doesn't allow yet, by name. Finder and
-/// Simple Block are left out, they always work. An AppKit menu, since a SwiftUI Menu button keeps a small fixed font.
-private struct AddRunningAppButton: View {
-    @ObservedObject var model: AppModel
-    @Environment(\.uiScale) private var scale
-
-    var body: some View {
-        Button(action: showMenu) {
-            HStack(spacing: 6 * scale) {
-                Text("Add running app")
-                Image(systemName: "chevron.down").scaledFont(11, weight: .semibold)
-            }
-            .bezelPadding()
-        }
-    }
-
-    private func showMenu() {
-        let menu = NSMenu()
-        menu.font = .systemFont(ofSize: 13 * scale)
-        var seen = alwaysAllowedInFocus.union(model.focusRules.allowed.map(\.bundleId))
-        var apps: [GatedApp] = []
-        for running in NSWorkspace.shared.runningApplications where running.activationPolicy == .regular {
-            guard let id = running.bundleIdentifier, let url = running.bundleURL, seen.insert(id).inserted else { continue }
-            apps.append(GatedApp(bundleId: id, name: running.localizedName ?? url.deletingPathExtension().lastPathComponent, path: url.path))
-        }
-        for app in apps.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
-            let item = ClosureMenuItem(app.name) { model.addFocusApp(app) }
-            item.image = NSWorkspace.shared.icon(forFile: app.path)
-            item.image?.size = NSSize(width: 16 * scale, height: 16 * scale)
-            menu.addItem(item)
-        }
-        // No action, so it shows disabled.
-        if apps.isEmpty { menu.addItem(withTitle: "No other apps running", action: nil, keyEquivalent: "") }
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-    }
-}
-
-/// A menu item that runs a closure when picked.
-private final class ClosureMenuItem: NSMenuItem {
-    private let run: () -> Void
-
-    init(_ title: String, run: @escaping () -> Void) {
-        self.run = run
-        super.init(title: title, action: #selector(pick), keyEquivalent: "")
-        target = self
-    }
-
-    required init(coder: NSCoder) { fatalError("not used") }
-
-    @objc private func pick() { run() }
 }
 
 /// Lays its children out left to right and wraps to a new line when the width runs out.

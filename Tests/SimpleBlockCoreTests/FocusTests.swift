@@ -61,17 +61,17 @@ final class FocusTests: XCTestCase {
         XCTAssertEqual(durationText(240), "4 h")
     }
 
-    func testAllowedIsPickedListsThenOwnAppsUnique() {
+    func testAllowedIsPickedListsUnique() {
         let deepWork = Allowlist(name: "Deep work", entries: [obsidian, todoist])
+        let writing = Allowlist(name: "Writing", entries: [todoist, notes])
         let chat = Allowlist(name: "Chat", entries: [slack])
-        let rules = FocusRules(allowlists: [deepWork, chat], picked: [deepWork.id], apps: [todoist, notes])
+        let rules = FocusRules(allowlists: [deepWork, writing, chat], picked: [deepWork.id, writing.id])
         XCTAssertEqual(rules.allowed, [obsidian, todoist, notes], "Chat isn't picked, Todoist counts once")
         XCTAssertFalse(session.hides("md.obsidian", allowed: rules.allowed, at: minutes(10)))
         XCTAssertTrue(session.hides("com.tinyspeck.slackmacgap", allowed: rules.allowed, at: minutes(10)))
     }
 
     func testPickedIdsOfMissingListsAreIgnored() {
-        XCTAssertEqual(FocusRules(picked: [UUID()], apps: [notes]).allowed, [notes])
         XCTAssertEqual(FocusRules(picked: [UUID()]).allowed, [])
     }
 
@@ -84,13 +84,12 @@ final class FocusTests: XCTestCase {
         XCTAssertEqual(rules.allowed, [])
     }
 
-    func testNamesAreListsFirstThenOwnAppsOutsideThem() {
+    func testNamesArePickedListsWithApps() {
         let deepWork = Allowlist(name: "Deep work", entries: [obsidian, todoist])
         let empty = Allowlist(name: "Empty")
         let chat = Allowlist(name: "Chat", entries: [slack])
-        let rules = FocusRules(allowlists: [deepWork, empty, chat], picked: [deepWork.id, empty.id], apps: [todoist, notes])
-        XCTAssertEqual(rules.names, "Deep work, Notes", "Empty lists and apps already in a picked list are left out")
-        XCTAssertEqual(FocusRules(apps: [obsidian, todoist]).names, "Obsidian, Todoist")
+        let rules = FocusRules(allowlists: [deepWork, empty, chat], picked: [deepWork.id, empty.id, chat.id])
+        XCTAssertEqual(rules.names, "Deep work, Chat", "Empty lists are left out")
         XCTAssertEqual(FocusRules().names, "")
     }
 
@@ -108,7 +107,6 @@ final class FocusTests: XCTestCase {
         let rules = FocusRules.migrated(apps: [obsidian, todoist])
         XCTAssertEqual(rules.allowlists.map(\.name), ["Deep work"])
         XCTAssertEqual(rules.picked, Set(rules.allowlists.map(\.id)))
-        XCTAssertEqual(rules.apps, [])
         XCTAssertEqual(rules.allowed, [obsidian, todoist])
         XCTAssertEqual(FocusRules.migrated(apps: []), FocusRules(), "Nothing to move, no list")
     }

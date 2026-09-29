@@ -53,7 +53,7 @@ struct SettingsView: View {
                               frozen: model.isFrozen(list:), delete: { model.rules.deleteBlocklist($0) })
                 case .allowlists:
                     ListsPane(model: model, noun: "Allowlist", example: "Deep work", lists: $model.focusRules.allowlists,
-                              allows: { lists in model.canChangeFocus { $0.allowlists = lists } },
+                              allows: { lists in model.canChangeFocus { $0.allowlists = lists } }, runningApps: true,
                               delete: { model.focusRules.deleteAllowlist($0) })
                 case .general: GeneralPane(model: model)
                 case .history: HistoryPane(model: model)
@@ -615,7 +615,8 @@ private struct GeneralPane: View {
 }
 
 /// The Blocklists and Allowlists tabs, same UI: a section per list with rename and delete in its title, its apps with
-/// rename and remove, Add app… under each list, Add blocklist (or allowlist) at the top like Add session.
+/// rename and remove, Add app… (and Add running app on allowlists) under each list, Add blocklist (or allowlist) at
+/// the top like Add session.
 private struct ListsPane: View {
     @ObservedObject var model: AppModel
     /// "Blocklist" or "Allowlist".
@@ -627,6 +628,8 @@ private struct ListsPane: View {
     var frozen: (UUID) -> Bool = { _ in false }
     /// Whether the lists may lose an app or a list, given how they'd look after. Allowlists: focus keeps an app.
     var allows: ([Blocklist]) -> Bool = { _ in true }
+    /// Adds "Add running app" next to Add app…. Allowlists only.
+    var runningApps = false
     let delete: (UUID) -> Void
     @Environment(\.uiScale) private var scale
     /// The list whose title is being renamed in place.
@@ -693,8 +696,13 @@ private struct ListsPane: View {
                         }
                     }
                 }
-                HStack {
+                HStack(spacing: 10 * scale) {
                     Spacer()
+                    if runningApps {
+                        AddRunningAppButton(skip: list.entries) { app in
+                            if let index = lists.firstIndex(where: { $0.id == list.id }) { lists[index].entries.add([app]) }
+                        }
+                    }
                     Button { addApps(to: list.id) } label: { Text("Add app…").bezelPadding() }
                 }
                 .padding(.bottom, 12 * scale)
