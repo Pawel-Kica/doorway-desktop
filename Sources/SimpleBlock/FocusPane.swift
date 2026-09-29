@@ -17,6 +17,7 @@ struct FocusPane: View {
         // focusLeft rather than focus: a focus that just ran out reads as off until Gatekeeper ends it.
         let on = model.focusLeft > 0
         Pane {
+            SectionTitle(title: "Focus") {}
             if on, let focus = model.focus { timeLeftCard(until: focus.ends).padding(.bottom, 12 * scale) }
             SectionTitle(title: "Allowlists") {
                 // Negative padding keeps the title row as tall as one without a button.

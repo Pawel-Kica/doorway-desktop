@@ -579,6 +579,7 @@ private struct GeneralPane: View {
 
     var body: some View {
         Pane {
+            SectionTitle(title: "General") {}
             Card {
                 CardRow(divider: false) {
                     SettingRow(title: "Size") {
@@ -797,6 +798,7 @@ private struct HistoryPane: View {
         let days = days()
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8 * scale) {
+                SectionTitle(title: "History") {}
                 HistoryDashboard(entries: model.entries, now: model.now, scale: scale)
                     .padding(.bottom, 16 * scale)
                 if days.isEmpty {

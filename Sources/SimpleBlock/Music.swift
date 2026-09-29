@@ -409,6 +409,7 @@ struct MusicPane: View {
 
     var body: some View {
         Pane {
+            SectionTitle(title: "Music") {}
             Card { CardRow(divider: false) { nowPlaying } }
             Card {
                 CardRow(divider: false) {
