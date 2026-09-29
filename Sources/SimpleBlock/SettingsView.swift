@@ -21,8 +21,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
 /// Settings window: sidebar with Focus, Zone, Music, Sessions, Blocklists, Allowlists, General, History, drawn at the
 /// `uiScale` size.
-/// ⌘+, ⌘− and ⌘0 change the size while it's open, ⌘B hides and shows the sidebar, ⌘[ and ⌘] go to the previous and
-/// next tab. The window can't be resized, it's 960 x 680 times the scale.
+/// ⌘+, ⌘− and ⌘0 change the size while it's open, the toolbar's sidebar button or ⌘B hides and shows the sidebar,
+/// ⌘[ and ⌘] go to the previous and next tab. The window can't be resized, it's 960 x 680 times the scale.
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     @AppStorage(UIScale.key) private var scale = UIScale.standard
@@ -39,7 +39,7 @@ struct SettingsView: View {
                     .tag(tab)
             }
             .navigationSplitViewColumnWidth(210 * scale)
-            // ⌘B instead: the toolbar button's collapse and expand glitched the sidebar in this fixed-size window.
+            // Our own button instead: the system one's collapse and expand glitched the sidebar in this fixed-size window.
             .toolbar(removing: .sidebarToggle)
         } detail: {
             Group {
@@ -62,13 +62,19 @@ struct SettingsView: View {
             .scaledFont(15)
             .controlSize(UIScale.controlSize(scale))
         }
+        // On the split view, not the sidebar, so it stays when the sidebar is hidden.
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button(action: toggleSidebar) { Image(systemName: "sidebar.left") }
+                    .help("Hide or show the sidebar (⌘B)")
+            }
+        }
         // An exact size rather than a minimum: the window isn't resizable, so it shrinks back only this way.
         .frame(width: size.width, height: size.height)
         .background { SizeShortcuts(scale: $scale) }
         .background {
             Group {
-                Button("Toggle sidebar") { withAnimation { columns = columns == .detailOnly ? .all : .detailOnly } }
-                    .keyboardShortcut("b")
+                Button("Toggle sidebar", action: toggleSidebar).keyboardShortcut("b")
                 // Work with the sidebar hidden too: they're on the window, not the list.
                 Button("Previous tab") { model.settingsTab = model.settingsTab.stepped(by: -1) }.keyboardShortcut("[")
                 Button("Next tab") { model.settingsTab = model.settingsTab.stepped(by: 1) }.keyboardShortcut("]")
@@ -80,6 +86,10 @@ struct SettingsView: View {
         .environment(\.uiScale, scale)
         // The window grows from its top left corner, which can push its bottom off the screen.
         .onChange(of: scale) { DispatchQueue.main.async { NSApp.keyWindow?.keepOnScreen() } }
+    }
+
+    private func toggleSidebar() {
+        withAnimation { columns = columns == .detailOnly ? .all : .detailOnly }
     }
 }
 
