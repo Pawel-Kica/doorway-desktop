@@ -81,8 +81,16 @@ struct SettingsView: View {
             }
             .opacity(0).accessibilityHidden(true)
         }
-        // Settings windows get the preferences toolbar: title on top, then an empty row meant for tab icons.
-        .background { WindowReader { $0.toolbarStyle = .unifiedCompact } }
+        .background {
+            WindowReader { window in
+                // Settings windows get the preferences toolbar: title on top, then an empty row meant for tab icons.
+                window.toolbarStyle = .unifiedCompact
+                // The fixed frame pins the window's min size to its size, so showing the sidebar tried to grow the
+                // window: the split view overflowed left, then snapped back. With constraints it squeezes the detail.
+                (window.contentView?.firstSplitView()?.delegate as? NSSplitViewController)?
+                    .splitViewItems.first?.collapseBehavior = .useConstraints
+            }
+        }
         .environment(\.uiScale, scale)
         // The window grows from its top left corner, which can push its bottom off the screen.
         .onChange(of: scale) { DispatchQueue.main.async { NSApp.keyWindow?.keepOnScreen() } }
@@ -104,6 +112,15 @@ private struct WindowReader: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSView, context: Context) {}
+}
+
+private extension NSView {
+    /// The NavigationSplitView's AppKit split view, depth first.
+    func firstSplitView() -> NSSplitView? {
+        if let split = self as? NSSplitView { return split }
+        for view in subviews { if let split = view.firstSplitView() { return split } }
+        return nil
+    }
 }
 
 /// Sidebar icon in a column that grows with the scale. The system one is fixed, so big icons ran into the title.
