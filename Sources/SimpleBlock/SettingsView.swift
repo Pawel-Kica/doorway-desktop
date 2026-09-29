@@ -592,7 +592,7 @@ private struct TimeField: View {
 
 private struct GeneralPane: View {
     @AppStorage(UIScale.key) private var scale = UIScale.standard
-    @AppStorage(AppIconChoice.key) private var appIcon = AppIconChoice.blue.rawValue
+    @AppStorage(AppIconChoice.key) private var appIcon = AppIconChoice.dark.rawValue
 
     var body: some View {
         Pane {

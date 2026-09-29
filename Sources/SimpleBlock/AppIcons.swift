@@ -1,10 +1,10 @@
 import AppKit
 
-/// App icons to pick in General (`appIcon` in UserDefaults): the white scope on an indigo tile (default) or on a
-/// #2B2B29 tile, like Paweł's Dock. The pick goes on the Dock icon and onto the bundle, so Finder, Raycast and
-/// Spotlight show it too. Blue is also Assets/AppIcon.icns, drawn the same way by scripts/make-icon.swift.
+/// App icons to pick in General (`appIcon` in UserDefaults): the white scope on a #2B2B29 tile (default, like
+/// Paweł's Dock) or on an indigo tile. The pick goes on the Dock icon and onto the bundle, so Finder, Raycast and
+/// Spotlight show it too. Dark is also Assets/AppIcon.icns, drawn the same way by scripts/make-icon.swift.
 enum AppIconChoice: String, CaseIterable, Identifiable {
-    case blue, dark
+    case dark, blue
 
     static let key = "appIcon"
     var id: Self { self }
@@ -36,18 +36,18 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The saved pick, Blue when none (or an old value).
+    /// The saved pick, Dark when none (or an old value).
     static var saved: AppIconChoice {
-        UserDefaults.standard.string(forKey: key).flatMap(AppIconChoice.init) ?? .blue
+        UserDefaults.standard.string(forKey: key).flatMap(AppIconChoice.init) ?? .dark
     }
 
-    /// Puts `saved` on the Dock icon and the bundle. Blue is the bundle's own icon, so it clears the custom one.
+    /// Puts `saved` on the Dock icon and the bundle. Dark is the bundle's own icon, so it clears the custom one.
     /// Called at launch and on every pick.
     @MainActor
     static func apply() {
         let choice = saved
         let image = choice.image(pixels: 1024)
         NSApp.applicationIconImage = image
-        NSWorkspace.shared.setIcon(choice == .blue ? nil : image, forFile: Bundle.main.bundlePath)
+        NSWorkspace.shared.setIcon(choice == .dark ? nil : image, forFile: Bundle.main.bundlePath)
     }
 }
