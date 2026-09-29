@@ -275,7 +275,7 @@ final class Gatekeeper {
         prompt.show(
             app: entry, trigger: trigger,
             nthToday: reasonsToday(model.entries, bundleId: entry.bundleId, now: now) + 1,
-            minutes: model.minutesPerReason,
+            minutes: model.rules.minutesPerReason(entry.bundleId, at: now),
             onSubmit: { [weak self] reason in self?.submit(entry, trigger: trigger, reason: reason) },
             onCancel: { [weak self] in self?.cancel(entry) })
     }
@@ -284,7 +284,7 @@ final class Gatekeeper {
         let reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
         guard wordCount(reason) >= minimumWords else { return }
         model.record(LogEntry(ts: Date(), bundleId: entry.bundleId, app: entry.name, kind: trigger.kind, reason: reason))
-        model.timers.start(entry.bundleId, minutes: model.minutesPerReason, now: Date())
+        model.timers.start(entry.bundleId, minutes: model.rules.minutesPerReason(entry.bundleId, at: Date()), now: Date())
         prompt.close()
         // Simple Block itself isn't active, so it can't hand activation over. Launch Services can.
         let process = running(entry).first

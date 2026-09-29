@@ -185,6 +185,7 @@ final class RulesTests: XCTestCase {
         let sessions = try JSONDecoder().decode([ScheduledSession].self, from: Data(old.utf8))
         XCTAssertEqual(sessions.count, 1)
         XCTAssertFalse(sessions[0].superLock)
+        XCTAssertEqual(sessions[0].minutesPerReason, 5)
     }
 
     func testEveryEntryIsUniqueByBundleId() {
@@ -212,6 +213,22 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(rules.access(signal.bundleId, timers: timers, at: date(12, 5), calendar: utc), .ask, "timer ran out")
         timers.start(signal.bundleId, minutes: 5, now: date(20))
         XCTAssertEqual(rules.access(signal.bundleId, timers: timers, at: date(20), calendar: utc), .lock, "super lock wins over a timer")
+    }
+
+    func testMinutesPerReasonIsTheShortestActiveSession() {
+        let day = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(days: [2], from: 8 * 60, to: 19 * 60),
+                                   minutesPerReason: 10)
+        let noon = ScheduledSession(blocklists: [messengers.id], schedule: Schedule(days: [2], from: 12 * 60, to: 13 * 60),
+                                    minutesPerReason: 3)
+        let mailDay = ScheduledSession(blocklists: [mail.id], schedule: Schedule(days: [2], from: 8 * 60, to: 19 * 60),
+                                       minutesPerReason: 1)
+        let rules = rules([day, noon, mailDay])
+        XCTAssertEqual(rules.minutesPerReason(whatsapp.bundleId, at: date(10), calendar: utc), 10)
+        XCTAssertEqual(rules.minutesPerReason(whatsapp.bundleId, at: date(12), calendar: utc), 3, "overlap takes the shorter")
+        XCTAssertEqual(rules.minutesPerReason(signal.bundleId, at: date(10), calendar: utc), 1, "Signal is in Mail too")
+        XCTAssertEqual(rules.minutesPerReason(whatsapp.bundleId, at: date(20), calendar: utc), 5, "nothing on: the default")
+        let quick = self.rules([], [QuickSession(blocklists: [messengers.id], ends: date(15))])
+        XCTAssertEqual(quick.minutesPerReason(signal.bundleId, at: date(10), calendar: utc), 5, "quick sessions use the default")
     }
 
     func testDeletingBlocklistCleansSessions() {

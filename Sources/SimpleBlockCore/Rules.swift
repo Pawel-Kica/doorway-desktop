@@ -16,6 +16,9 @@ public struct Blocklist: Codable, Identifiable, Hashable {
 /// A recurring session, e.g. Mon-Fri 8:00-19:00 on "Messengers".
 /// With `superLock` its apps never open while it's on: no reason prompt, and the session is frozen in Settings.
 public struct ScheduledSession: Codable, Identifiable, Equatable {
+    /// Time per reason when nothing sets it: new sessions, old saved ones, quick sessions.
+    public static let defaultMinutes = 5
+
     public var id: UUID
     /// Typed by Paweł, e.g. "Deep work mornings". Empty means the session is titled by its blocklists.
     public var name: String
@@ -23,18 +26,22 @@ public struct ScheduledSession: Codable, Identifiable, Equatable {
     public var schedule: Schedule
     public var enabled: Bool
     public var superLock: Bool
+    /// How long an app stays open after a reason, fixed from the moment it's given.
+    public var minutesPerReason: Int
 
     public init(id: UUID = UUID(), name: String = "", blocklists: Set<UUID>, schedule: Schedule, enabled: Bool = true,
-                superLock: Bool = false) {
+                superLock: Bool = false, minutesPerReason: Int = defaultMinutes) {
         self.id = id
         self.name = name
         self.blocklists = blocklists
         self.schedule = schedule
         self.enabled = enabled
         self.superLock = superLock
+        self.minutesPerReason = minutesPerReason
     }
 
-    /// Sessions saved before super lock have no `superLock` key, before names no `name`.
+    /// Sessions saved before super lock have no `superLock` key, before names no `name`, before per-session time
+    /// per reason no `minutesPerReason`.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -43,6 +50,7 @@ public struct ScheduledSession: Codable, Identifiable, Equatable {
         schedule = try c.decode(Schedule.self, forKey: .schedule)
         enabled = try c.decode(Bool.self, forKey: .enabled)
         superLock = try c.decodeIfPresent(Bool.self, forKey: .superLock) ?? false
+        minutesPerReason = try c.decodeIfPresent(Int.self, forKey: .minutesPerReason) ?? Self.defaultMinutes
     }
 
     /// What the session does at `now`, for its row in Settings.
@@ -176,6 +184,17 @@ public struct Rules: Equatable {
         if superLocked(at: now, calendar: calendar).contains(where: { $0.bundleId == bundleId }) { return .lock }
         let gated = gated(at: now, calendar: calendar).contains { $0.bundleId == bundleId }
         return gated && !timers.isRunning(bundleId, now: now) ? .ask : .open
+    }
+
+    /// Time per reason for `bundleId`: the shortest among the active sessions gating it. Quick sessions count as the
+    /// default, and so does an app nothing gates.
+    public func minutesPerReason(_ bundleId: String, at now: Date, calendar: Calendar = .current) -> Int {
+        let lists = Set(blocklists.filter { $0.entries.contains { $0.bundleId == bundleId } }.map(\.id))
+        let scheduled = activeSessions(at: now, calendar: calendar)
+            .filter { !$0.blocklists.isDisjoint(with: lists) }.map(\.minutesPerReason)
+        let quick = quickSessions.filter { $0.ends > now && !$0.blocklists.isDisjoint(with: lists) }
+            .map { _ in ScheduledSession.defaultMinutes }
+        return (scheduled + quick).min() ?? ScheduledSession.defaultMinutes
     }
 
     /// Deletes a blocklist and takes it out of every session. Quick sessions left with no blocklist end.

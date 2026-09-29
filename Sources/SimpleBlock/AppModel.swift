@@ -2,16 +2,13 @@ import AppKit
 import SimpleBlockCore
 import UniformTypeIdentifiers
 
-/// App state for the menu bar and Settings: the rules (blocklists and sessions), time per reason, focus and its
+/// App state for the menu bar and Settings: the rules (blocklists and sessions), focus and its
 /// allowlists, the log, the unlock timers and a clock that Gatekeeper ticks every second. Gatekeeper does the gating with it.
 /// Settings live in UserDefaults, the log in reasons.jsonl.
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
 
-    @Published var minutesPerReason: Int {
-        didSet { UserDefaults.standard.set(minutesPerReason, forKey: "minutesPerReason") }
-    }
     @Published var rules: Rules {
         didSet {
             save(rules.blocklists, "blocklists")
@@ -41,7 +38,6 @@ final class AppModel: ObservableObject {
 
     private init() {
         let defaults = UserDefaults.standard
-        minutesPerReason = defaults.object(forKey: "minutesPerReason") as? Int ?? 5
         entries = log.readAll()
         let allowlists: [Allowlist]? = Self.load("allowlists")
         // Before allowlists focus had only its own apps (`focusApps`, read only here): they become the list "Deep work".

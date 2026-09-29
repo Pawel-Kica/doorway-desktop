@@ -580,6 +580,7 @@ private struct TimeField: View {
 
 private struct GeneralPane: View {
     @AppStorage(UIScale.key) private var scale = UIScale.standard
+    @AppStorage(AppIconChoice.key) private var appIcon = AppIconChoice.blue.rawValue
 
     var body: some View {
         Pane {
@@ -593,6 +594,27 @@ private struct GeneralPane: View {
                                     Text("\(Int((choice * 100).rounded()))%").bezelPadding()
                                 }
                                 .toggleStyle(.button)
+                            }
+                        }
+                    }
+                }
+                CardRow {
+                    SettingRow(title: "App icon", note: "In the Dock, Finder and Raycast.") {
+                        HStack(spacing: 4 * scale) {
+                            ForEach(AppIconChoice.allCases) { choice in
+                                Button {
+                                    appIcon = choice.rawValue
+                                    AppIconChoice.apply()
+                                } label: {
+                                    Image(nsImage: choice.image(pixels: 128))
+                                        .resizable()
+                                        .frame(width: 44 * scale, height: 44 * scale)
+                                        .padding(2 * scale)
+                                        .background(AppIconChoice.saved == choice ? Color.accentColor.opacity(0.35) : .clear,
+                                                    in: RoundedRectangle(cornerRadius: 10 * scale))
+                                }
+                                .buttonStyle(.plain)
+                                .help(choice.name)
                             }
                         }
                     }

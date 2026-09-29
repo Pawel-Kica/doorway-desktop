@@ -32,6 +32,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# A picked app icon is an Icon\r file in the bundle root plus Finder info, which codesign refuses. The app puts it back
+# at launch.
+if [ -e "$APP/Icon"$'\r' ]; then mv -f "$APP/Icon"$'\r' /tmp/; fi
 xattr -cr "$APP"
 # Signed with the Apple Development certificate when there is one: macOS ties the Accessibility grant to the signature,
 # and an ad-hoc one changes with every build, which would drop the grant each time.

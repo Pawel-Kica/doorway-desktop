@@ -1,4 +1,4 @@
-// Renders the app icon (white scope on an indigo gradient tile) into Assets/AppIcon.icns.
+// Renders the app icon (white scope on an indigo gradient tile, Blue in AppIcons.swift) into Assets/AppIcon.icns.
 // Run from app/: swift scripts/make-icon.swift
 import AppKit
 
