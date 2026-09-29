@@ -255,13 +255,11 @@ struct IconButton: View {
 }
 
 /// Every session in one list, Freedom style. A scheduled session is one folded row (blocklists, schedule, status,
-/// enabled switch); a click opens its editor below it. Running quick sessions follow in the same list. Time per reason
-/// sits under it, one value for every session.
+/// enabled switch); a click opens its editor below it. Running quick sessions follow in the same list.
 private struct SessionsPane: View {
     @ObservedObject var model: AppModel
     /// Sessions shown open. View state only: the pane starts folded every time.
     @State private var open: Set<UUID> = []
-    @Environment(\.uiScale) private var scale
 
     var body: some View {
         Pane {
@@ -300,24 +298,6 @@ private struct SessionsPane: View {
             }
             Text("Same start and end means all day. An end before the start runs past midnight.")
                 .noteFont().foregroundStyle(.secondary).padding(.leading, 4)
-            Card {
-                CardRow(divider: false) {
-                    SettingRow(title: "Time per reason",
-                               note: "Fixed from the moment you give a reason. When it ends, the app hides and asks again.") {
-                        // Buttons instead of a Stepper, which doesn't grow with the scale. The symbols go in a Text
-                        // so both get a full line's height; a bare minus made a shorter button than the plus.
-                        HStack(spacing: 8 * scale) {
-                            Button { model.minutesPerReason -= 1 } label: { Text(Image(systemName: "minus")).bezelPadding() }
-                                .disabled(model.minutesPerReason <= 1)
-                                .accessibilityLabel("Less time")
-                            Text("\(model.minutesPerReason) min").monospacedDigit().frame(minWidth: 64 * scale)
-                            Button { model.minutesPerReason += 1 } label: { Text(Image(systemName: "plus")).bezelPadding() }
-                                .disabled(model.minutesPerReason >= 120)
-                                .accessibilityLabel("More time")
-                        }
-                    }
-                }
-            }
         }
         .navigationTitle("Sessions")
     }
@@ -451,8 +431,9 @@ private struct StatusLabel: View {
     }
 }
 
-/// An open session's rows under its header: days, time range, blocklists and super lock (days and blocklists as
-/// toggle chips), then Duplicate and Delete. Indented so they read as part of the session.
+/// An open session's rows under its header: days, time range, blocklists, super lock and time per reason (days and
+/// blocklists as toggle chips; time per reason only without super lock, which asks no reason), then Duplicate and
+/// Delete. Indented so they read as part of the session.
 /// Frozen: everything but Duplicate is disabled and Delete is gone.
 private struct SessionEditor: View {
     @ObservedObject var model: AppModel
@@ -513,6 +494,24 @@ private struct SessionEditor: View {
                     SettingRow(title: "Super lock",
                                note: "Apps never open while it's on, no reason asked. The session can't be changed until it ends.") {
                         Toggle("Super lock", isOn: $session.superLock).toggleStyle(.scaledSwitch).labelsHidden()
+                    }
+                }
+                if !session.superLock {
+                    CardRow {
+                        SettingRow(title: "Time per reason",
+                                   note: "Fixed from the moment you give a reason. When it ends, the app hides and asks again.") {
+                            // Buttons instead of a Stepper, which doesn't grow with the scale. The symbols go in a Text
+                            // so both get a full line's height; a bare minus made a shorter button than the plus.
+                            HStack(spacing: 8 * scale) {
+                                Button { session.minutesPerReason -= 1 } label: { Text(Image(systemName: "minus")).bezelPadding() }
+                                    .disabled(session.minutesPerReason <= 1)
+                                    .accessibilityLabel("Less time")
+                                Text("\(session.minutesPerReason) min").monospacedDigit().frame(minWidth: 64 * scale)
+                                Button { session.minutesPerReason += 1 } label: { Text(Image(systemName: "plus")).bezelPadding() }
+                                    .disabled(session.minutesPerReason >= 120)
+                                    .accessibilityLabel("More time")
+                            }
+                        }
                     }
                 }
             }
