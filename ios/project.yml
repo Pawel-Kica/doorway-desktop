@@ -4,11 +4,13 @@ options:
   deploymentTarget:
     iOS: "26.0"
   xcodeVersion: "27.0"
-  createIntermediateGroups: true
+# Team ID and bundle ID prefix come from Signing.xcconfig and your gitignored Local.xcconfig.
+configFiles:
+  Debug: Signing.xcconfig
+  Release: Signing.xcconfig
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    DEVELOPMENT_TEAM: SAU6D4D9AT
     CODE_SIGN_STYLE: Automatic
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
@@ -24,7 +26,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: SimpleBlock
-        PRODUCT_BUNDLE_IDENTIFIER: com.pawel.simple-block.ios
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).simple-block.ios
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_FILE: App/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Simple Block
@@ -41,7 +43,7 @@ targets:
       - target: SimpleBlock
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.pawel.simple-block.ios.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).simple-block.ios.uitests
         TARGETED_DEVICE_FAMILY: "1"
 schemes:
   SimpleBlock:

@@ -20,7 +20,7 @@ public struct ScheduledSession: Codable, Identifiable, Equatable {
     public static let defaultMinutes = 5
 
     public var id: UUID
-    /// Typed by Paweł, e.g. "Deep work mornings". Empty means the session is titled by its blocklists.
+    /// Typed by the user, e.g. "Deep work mornings". Empty means the session is titled by its blocklists.
     public var name: String
     public var blocklists: Set<UUID>
     public var schedule: Schedule

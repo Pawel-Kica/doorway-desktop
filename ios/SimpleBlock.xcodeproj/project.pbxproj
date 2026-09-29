@@ -35,6 +35,7 @@
 		54E8A61F1AB367E80C50BB0B /* PromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptView.swift; sourceTree = "<group>"; };
 		709D645E90FE55465B4222ED /* Intents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Intents.swift; sourceTree = "<group>"; };
 		83B65F0BDB8CD64D54631CB2 /* GatedApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatedApp.swift; sourceTree = "<group>"; };
+		8BF22AD55BFFFA029A19C4AF /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		ABDB75C703E2EBEB82C6A647 /* SimpleBlockUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SimpleBlockUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B943E39765A8E7ECBFEB3E45 /* GateState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GateState.swift; sourceTree = "<group>"; };
 		BCEF25C9390A0486A923B2CC /* SimpleBlock.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SimpleBlock.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -49,6 +50,7 @@
 			children = (
 				DA489CBC93267210D8A0C088 /* App */,
 				6C623408874875423971E109 /* Core */,
+				73920F60200E9FE15EBAEA32 /* ios */,
 				B84666C74CF6D8B98C7B1D67 /* UITests */,
 				869DDB53B0225742F46E7EF8 /* Products */,
 			);
@@ -61,6 +63,15 @@
 				B943E39765A8E7ECBFEB3E45 /* GateState.swift */,
 			);
 			path = Core;
+			sourceTree = "<group>";
+		};
+		73920F60200E9FE15EBAEA32 /* ios */ = {
+			isa = PBXGroup;
+			children = (
+				8BF22AD55BFFFA029A19C4AF /* Signing.xcconfig */,
+			);
+			name = ios;
+			path = .;
 			sourceTree = "<group>";
 		};
 		869DDB53B0225742F46E7EF8 /* Products */ = {
@@ -143,12 +154,10 @@
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					8BCF19E3F4BA2A4D06073607 = {
-						DevelopmentTeam = SAU6D4D9AT;
 						ProvisioningStyle = Automatic;
 						TestTargetID = FB567B268936B0A7CA72A81E;
 					};
 					FB567B268936B0A7CA72A81E = {
-						DevelopmentTeam = SAU6D4D9AT;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -220,6 +229,7 @@
 /* Begin XCBuildConfiguration section */
 		39B2EC49FE1CFAB8442308CB /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 8BF22AD55BFFFA029A19C4AF /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -255,7 +265,6 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = SAU6D4D9AT;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -300,7 +309,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.pawel.simple-block.ios";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).simple-block.ios";
 				PRODUCT_NAME = SimpleBlock;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -309,6 +318,7 @@
 		};
 		6DCB83832E4D1DC55CE23030 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 8BF22AD55BFFFA029A19C4AF /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -344,7 +354,6 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = SAU6D4D9AT;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -377,7 +386,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.pawel.simple-block.ios.uitests";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).simple-block.ios.uitests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 				TEST_TARGET_NAME = SimpleBlock;
@@ -398,7 +407,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.pawel.simple-block.ios";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).simple-block.ios";
 				PRODUCT_NAME = SimpleBlock;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -414,7 +423,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.pawel.simple-block.ios.uitests";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).simple-block.ios.uitests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 				TEST_TARGET_NAME = SimpleBlock;

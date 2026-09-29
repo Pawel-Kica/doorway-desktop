@@ -1,0 +1,6 @@
+// Signing for the iPhone app. Put your own values in Local.xcconfig next to this file (gitignored), e.g.
+//   DEVELOPMENT_TEAM = ABCDE12345
+//   BUNDLE_ID_PREFIX = com.yourname
+// Your team ID is in Xcode > Settings > Accounts. A bundle ID can only belong to one team, so change the prefix.
+BUNDLE_ID_PREFIX = com.pawel
+#include? "Local.xcconfig"

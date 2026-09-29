@@ -1,7 +1,7 @@
 import AppKit
 
-/// App icons to pick in General (`appIcon` in UserDefaults): the white scope on a #2B2B29 tile (default, like
-/// Paweł's Dock) or on an indigo tile. The pick goes on the Dock icon and onto the bundle, so Finder, Raycast and
+/// App icons to pick in General (`appIcon` in UserDefaults): the white scope on a #2B2B29 tile (default) or
+/// on an indigo tile. The pick goes on the Dock icon and onto the bundle, so Finder, Raycast and
 /// Spotlight show it too. Dark is also Assets/AppIcon.icns, drawn the same way by scripts/make-icon.swift.
 enum AppIconChoice: String, CaseIterable, Identifiable {
     case dark, blue

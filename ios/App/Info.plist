@@ -7,7 +7,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.pawel.simple-block.ios</string>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>simpleblock</string>
