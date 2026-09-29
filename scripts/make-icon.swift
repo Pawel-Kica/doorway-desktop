@@ -1,4 +1,4 @@
-// Renders the app icon (white scope on a #2B2B29 tile, the Scope in AppIcons.swift) into Assets/AppIcon.icns.
+// Renders the app icon (white scope on an indigo gradient tile) into Assets/AppIcon.icns.
 // Run from app/: swift scripts/make-icon.swift
 import AppKit
 
@@ -15,8 +15,8 @@ func render(_ px: Int) -> Data {
     // macOS icon grid: the tile is ~80% of the canvas with a continuous-looking corner.
     let tile = NSRect(x: 0, y: 0, width: size, height: size).insetBy(dx: size * 0.1, dy: size * 0.1)
     let path = NSBezierPath(roundedRect: tile, xRadius: tile.width * 0.225, yRadius: tile.width * 0.225)
-    NSColor(srgbRed: 0x2B / 255, green: 0x2B / 255, blue: 0x29 / 255, alpha: 1).setFill()
-    path.fill()
+    NSGradient(starting: NSColor(srgbRed: 0.27, green: 0.35, blue: 0.72, alpha: 1),
+               ending: NSColor(srgbRed: 0.12, green: 0.15, blue: 0.34, alpha: 1))!.draw(in: path, angle: -90)
     let config = NSImage.SymbolConfiguration(pointSize: size * 0.52, weight: .medium)
         .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
     let glyph = NSImage(systemSymbolName: "scope", accessibilityDescription: nil)!.withSymbolConfiguration(config)!

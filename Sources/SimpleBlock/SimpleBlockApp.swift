@@ -32,7 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         registerLoginItem()
-        AppIconChoice.apply()
         gatekeeper.start()
     }
 

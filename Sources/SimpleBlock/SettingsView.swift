@@ -55,7 +55,7 @@ struct SettingsView: View {
                     ListsPane(model: model, noun: "Allowlist", example: "Deep work", lists: $model.focusRules.allowlists,
                               allows: { lists in model.canChangeFocus { $0.allowlists = lists } }, runningApps: true,
                               delete: { model.focusRules.deleteAllowlist($0) })
-                case .general: GeneralPane(model: model)
+                case .general: GeneralPane()
                 case .history: HistoryPane(model: model)
                 }
             }
@@ -245,11 +245,13 @@ struct IconButton: View {
 }
 
 /// Every session in one list, Freedom style. A scheduled session is one folded row (blocklists, schedule, status,
-/// enabled switch); a click opens its editor below it. Running quick sessions follow in the same list.
+/// enabled switch); a click opens its editor below it. Running quick sessions follow in the same list. Time per reason
+/// sits under it, one value for every session.
 private struct SessionsPane: View {
     @ObservedObject var model: AppModel
     /// Sessions shown open. View state only: the pane starts folded every time.
     @State private var open: Set<UUID> = []
+    @Environment(\.uiScale) private var scale
 
     var body: some View {
         Pane {
@@ -288,6 +290,24 @@ private struct SessionsPane: View {
             }
             Text("Same start and end means all day. An end before the start runs past midnight.")
                 .noteFont().foregroundStyle(.secondary).padding(.leading, 4)
+            Card {
+                CardRow(divider: false) {
+                    SettingRow(title: "Time per reason",
+                               note: "Fixed from the moment you give a reason. When it ends, the app hides and asks again.") {
+                        // Buttons instead of a Stepper, which doesn't grow with the scale. The symbols go in a Text
+                        // so both get a full line's height; a bare minus made a shorter button than the plus.
+                        HStack(spacing: 8 * scale) {
+                            Button { model.minutesPerReason -= 1 } label: { Text(Image(systemName: "minus")).bezelPadding() }
+                                .disabled(model.minutesPerReason <= 1)
+                                .accessibilityLabel("Less time")
+                            Text("\(model.minutesPerReason) min").monospacedDigit().frame(minWidth: 64 * scale)
+                            Button { model.minutesPerReason += 1 } label: { Text(Image(systemName: "plus")).bezelPadding() }
+                                .disabled(model.minutesPerReason >= 120)
+                                .accessibilityLabel("More time")
+                        }
+                    }
+                }
+            }
         }
         .navigationTitle("Sessions")
     }
@@ -551,51 +571,12 @@ private struct TimeField: View {
 }
 
 private struct GeneralPane: View {
-    @ObservedObject var model: AppModel
     @AppStorage(UIScale.key) private var scale = UIScale.standard
-    @AppStorage(AppIconChoice.key) private var appIcon = AppIconChoice.scope.rawValue
 
     var body: some View {
         Pane {
             Card {
                 CardRow(divider: false) {
-                    SettingRow(title: "Time per reason",
-                               note: "Fixed from the moment you give a reason. When it ends, the app hides and asks again.") {
-                        // Buttons instead of a Stepper, which doesn't grow with the scale. The symbols go in a Text
-                        // so both get a full line's height; a bare minus made a shorter button than the plus.
-                        HStack(spacing: 8 * scale) {
-                            Button { model.minutesPerReason -= 1 } label: { Text(Image(systemName: "minus")).bezelPadding() }
-                                .disabled(model.minutesPerReason <= 1)
-                                .accessibilityLabel("Less time")
-                            Text("\(model.minutesPerReason) min").monospacedDigit().frame(minWidth: 64 * scale)
-                            Button { model.minutesPerReason += 1 } label: { Text(Image(systemName: "plus")).bezelPadding() }
-                                .disabled(model.minutesPerReason >= 120)
-                                .accessibilityLabel("More time")
-                        }
-                    }
-                }
-                CardRow {
-                    SettingRow(title: "App icon", note: "In the Dock, Finder and Raycast.") {
-                        HStack(spacing: 4 * scale) {
-                            ForEach(AppIconChoice.allCases) { choice in
-                                Button {
-                                    appIcon = choice.rawValue
-                                    AppIconChoice.apply()
-                                } label: {
-                                    Image(nsImage: choice.image(pixels: 128))
-                                        .resizable()
-                                        .frame(width: 44 * scale, height: 44 * scale)
-                                        .padding(2 * scale)
-                                        .background(AppIconChoice(rawValue: appIcon) ?? .scope == choice ? Color.accentColor.opacity(0.35) : .clear,
-                                                    in: RoundedRectangle(cornerRadius: 10 * scale))
-                                }
-                                .buttonStyle(.plain)
-                                .help(choice.name)
-                            }
-                        }
-                    }
-                }
-                CardRow {
                     SettingRow(title: "Size", note: "⌘+ and ⌘− also work, ⌘0 goes back to \(Int(UIScale.standard * 100))%.") {
                         // Chips instead of a segmented picker, which doesn't grow with the scale.
                         HStack(spacing: 6 * scale) {
