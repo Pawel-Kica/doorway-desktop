@@ -111,7 +111,7 @@ final class Gatekeeper {
             if prompt.isShowing {
                 prompt.bringToFront()
             } else {
-                ask(entry, trigger: expired ? .expired : isFresh(app, now: now) ? .launch : .switch, now: now)
+                ask(entry, trigger: expired ? .expired : isFresh(app, now: now) ? .launch : .switch)
             }
         }
     }
@@ -284,11 +284,9 @@ final class Gatekeeper {
         }
     }
 
-    private func ask(_ entry: GatedApp, trigger: Trigger, now: Date) {
+    private func ask(_ entry: GatedApp, trigger: Trigger) {
         prompt.show(
             app: entry, trigger: trigger,
-            nthToday: reasonsToday(model.entries, bundleId: entry.bundleId, now: now) + 1,
-            minutes: model.rules.minutesPerReason(entry.bundleId, at: now),
             onSubmit: { [weak self] reason in self?.submit(entry, trigger: trigger, reason: reason) },
             onCancel: { [weak self] in self?.cancel(entry) })
     }

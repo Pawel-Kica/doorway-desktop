@@ -76,7 +76,7 @@ private final class PromptText: ObservableObject {
 
 /// The reason prompt: a see-through panel above all windows, centered on the black backdrop, so the gated app's window
 /// can't be seen even when it briefly unhides itself. Looks like Doorway's ask page. One at a time.
-/// ⌘↵ submits once there are enough words, Esc cancels. The same panel shows the super lock notice.
+/// Return or ⌘↵ submits once there are enough words, Esc cancels. The same panel shows the super lock notice.
 @MainActor
 final class PromptController {
     private let backdrop: Backdrop
@@ -90,11 +90,9 @@ final class PromptController {
         self.backdrop = backdrop
     }
 
-    func show(app: GatedApp, trigger: Trigger, nthToday: Int, minutes: Int,
-              onSubmit: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+    func show(app: GatedApp, trigger: Trigger, onSubmit: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
         let text = PromptText()
-        let view = PromptView(app: app, trigger: trigger, nthToday: nthToday, minutes: minutes, text: text,
-                              onSubmit: { onSubmit(text.value) }, onCancel: onCancel)
+        let view = PromptView(app: app, trigger: trigger, text: text, onSubmit: { onSubmit(text.value) }, onCancel: onCancel)
         open(view, for: app, onEscape: onCancel) {
             if wordCount(text.value) >= minimumWords { onSubmit(text.value) }
         }
@@ -168,44 +166,31 @@ final class PromptController {
     }
 }
 
+/// Doorway's ask page, 1:1: the question, one pill input, two buttons. Open stays dimmed until the reason has
+/// `minimumWords` words.
 private struct PromptView: View {
     let app: GatedApp
     let trigger: Trigger
-    let nthToday: Int
-    let minutes: Int
     @ObservedObject var text: PromptText
     let onSubmit: () -> Void
     let onCancel: () -> Void
     @FocusState private var focused: Bool
 
     var body: some View {
-        let words = wordCount(text.value)
-        let enough = words >= minimumWords
+        let enough = wordCount(text.value) >= minimumWords
         DoorwayPage {
-            VStack(spacing: 12) {
-                Text("\(trigger.question(app.name)) (\(ordinal(nthToday)))")
-                if trigger == .expired {
-                    Text("Your \(minutes) min ran out, so \(app.name) is hidden.")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.white.opacity(0.6))
-                }
-            }
-            VStack(spacing: 12) {
-                TextEditor(text: $text.value)
-                    .font(.system(size: 20, weight: .medium))
-                    .multilineTextAlignment(.center)
-                    .scrollContentBackground(.hidden)
-                    .scrollIndicators(.never)
-                    .focused($focused)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 14)
-                    .frame(width: 592, height: 80)
-                    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 40))
-                Text("\(words) / \(minimumWords) words")
-                    .font(.system(size: 16))
-                    .monospacedDigit()
-                    .foregroundStyle(enough ? Doorway.light : .white.opacity(0.5))
-            }
+            trigger.question(app.name)
+            TextField("", text: $text.value)
+                .textFieldStyle(.plain)
+                .font(.system(size: 20, weight: .medium))
+                .multilineTextAlignment(.center)
+                .tint(Doorway.light)
+                .focused($focused)
+                .onSubmit { if enough { onSubmit() } }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
+                .frame(width: 592)
+                .background(.white.opacity(0.08), in: Capsule())
             HStack(spacing: 14) {
                 Button("Never mind", action: onCancel).buttonStyle(PillButtonStyle())
                 Button("Open \(app.name)", action: onSubmit)

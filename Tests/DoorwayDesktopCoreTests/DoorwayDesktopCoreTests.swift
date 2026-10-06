@@ -312,22 +312,6 @@ final class LogTests: XCTestCase {
         try log.append(second)
         XCTAssertEqual(log.readAll(), [first, second])
     }
-
-    func testReasonsTodayCountsOnlyReasonKinds() {
-        let entries = [
-            LogEntry(ts: date(9), bundleId: "signal", app: "Signal", kind: .launch, reason: "r"),
-            LogEntry(ts: date(10), bundleId: "signal", app: "Signal", kind: .cancelled),
-            LogEntry(ts: date(11), bundleId: "slack", app: "Slack", kind: .switch, reason: "r"),
-            LogEntry(ts: date(day: 13, 11), bundleId: "signal", app: "Signal", kind: .expired, reason: "r"),
-        ]
-        XCTAssertEqual(reasonsToday(entries, bundleId: "signal", now: date(12), calendar: utc), 1)
-        XCTAssertEqual(reasonsToday(entries, now: date(12), calendar: utc), 2)
-    }
-
-    func testOrdinal() {
-        XCTAssertEqual([1, 2, 3, 4, 11, 12, 13, 21, 102, 111].map(ordinal),
-                       ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "102nd", "111th"])
-    }
 }
 
 final class GatedAppTests: XCTestCase {

@@ -87,10 +87,3 @@ public struct ReasonLog {
         return text.split(separator: "\n").compactMap { try? LogCodec.decode(String($0)) }
     }
 }
-
-/// Reasons given today (launch/switch/expired), for one app or all of them.
-public func reasonsToday(_ entries: [LogEntry], bundleId: String? = nil, now: Date, calendar: Calendar = .current) -> Int {
-    entries.filter {
-        $0.kind.hasReason && (bundleId == nil || $0.bundleId == bundleId) && calendar.isDate($0.ts, inSameDayAs: now)
-    }.count
-}
