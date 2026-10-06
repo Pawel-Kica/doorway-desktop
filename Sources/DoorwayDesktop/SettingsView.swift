@@ -22,14 +22,14 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 /// Settings window: sidebar with Zone, Focus, Music, Sessions, Blocklists, Allowlists, General, History, drawn at the
 /// `uiScale` size.
 /// ⌘+, ⌘− and ⌘0 zoom the content, the toolbar's sidebar button or ⌘B hides and shows the sidebar,
-/// ⌘[ and ⌘] go to the previous and next tab, ⌘1 to ⌘8 jump to one. The window resizes freely, macOS keeps its frame.
+/// ⌘[ and ⌘] go to the previous and next tab, ⌘1 to ⌘8 jump to one. The window resizes freely and keeps its frame.
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     @AppStorage(UIScale.key) private var scale = UIScale.standard
     @State private var columns = NavigationSplitViewVisibility.all
+    @State private var keepResizable: NSKeyValueObservation?
 
     var body: some View {
-        let ideal = UIScale.size(960, 680, scale: UIScale.standard)
         NavigationSplitView(columnVisibility: $columns) {
             List(SettingsTab.allCases, selection: Binding(get: { model.settingsTab }, set: { if let tab = $0 { model.settingsTab = tab } })) { tab in
                 Label(tab.rawValue, systemImage: tab.symbol)
@@ -69,7 +69,7 @@ struct SettingsView: View {
                     .help("Hide or show the sidebar (⌘B)")
             }
         }
-        .frame(minWidth: 720, idealWidth: ideal.width, maxWidth: .infinity, minHeight: 480, idealHeight: ideal.height, maxHeight: .infinity)
+        .frame(minWidth: 720, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
         .background { SizeShortcuts(scale: $scale) }
         .background {
             Group {
@@ -87,8 +87,18 @@ struct SettingsView: View {
             WindowReader { window in
                 // Settings windows get the preferences toolbar: title on top, then an empty row meant for tab icons.
                 window.toolbarStyle = .unifiedCompact
-                // Settings windows aren't resizable by default.
+                // SwiftUI takes resizing off Settings windows as they open, so it goes back on whenever it's removed.
                 window.styleMask.insert(.resizable)
+                keepResizable = window.observe(\.styleMask) { window, _ in
+                    if !window.styleMask.contains(.resizable) { window.styleMask.insert(.resizable) }
+                }
+                // SwiftUI opens Settings at 900 x 568 and saves that under its own autosave name, over the user's size,
+                // so the frame lives under ours. 960 x 680 at the default scale the first time.
+                if !window.setFrameUsingName("SettingsWindow") {
+                    window.setContentSize(UIScale.size(960, 680, scale: UIScale.standard))
+                    window.center()
+                }
+                window.setFrameAutosaveName("SettingsWindow")
                 // Showing the sidebar could try to grow the window: the split view overflowed left, then snapped back.
                 // With constraints it squeezes the detail.
                 (window.contentView?.firstSplitView()?.delegate as? NSSplitViewController)?
@@ -596,7 +606,7 @@ private struct TimeField: View {
 
 private struct GeneralPane: View {
     @Environment(\.uiScale) private var scale
-    @AppStorage(AppIconChoice.key) private var appIcon = AppIconChoice.dark.rawValue
+    @AppStorage(AppIconChoice.key) private var appIcon = AppIconChoice.color.rawValue
 
     var body: some View {
         Pane {

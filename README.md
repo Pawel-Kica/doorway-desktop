@@ -59,6 +59,6 @@ With a free Apple account the app expires after 7 days, then you run it from Xco
 
 ## More
 
-The landing page: [pawelkica.com/doorway-desktop](https://pawelkica.com/doorway-desktop).
+The landing page: [pawelkica.com/doorway](https://pawelkica.com/doorway).
 
 MIT licensed, see [LICENSE](LICENSE).

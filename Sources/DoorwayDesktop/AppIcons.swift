@@ -1,11 +1,11 @@
 import AppKit
 
-/// App icons to pick in General (`appIcon` in UserDefaults): a white doorway on a #2B2B29 tile (default) or Doorway's
-/// color icon, the Chrome extension's (Assets/DoorwayColor.png, copied into the bundle by build.sh). The pick goes on
-/// the Dock icon and onto the bundle, so Finder, Raycast and Spotlight show it too. Dark is also Assets/AppIcon.icns,
-/// drawn the same way by scripts/make-icon.swift.
+/// App icons to pick in General (`appIcon` in UserDefaults): Doorway's color icon, the Chrome extension's (default,
+/// Assets/DoorwayColor.png, copied into the bundle by build.sh) or a white doorway on a #2B2B29 tile. The pick goes on
+/// the Dock icon and onto the bundle, so Finder, Raycast and Spotlight show it too. Color is also the bundle's own icon,
+/// Assets/AppIcon.icns, made from DoorwayColor.png by scripts/make-icon.sh.
 enum AppIconChoice: String, CaseIterable, Identifiable {
-    case dark, color
+    case color, dark
 
     static let key = "appIcon"
     var id: Self { self }
@@ -62,18 +62,18 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    /// The saved pick, Dark when none (or an old value).
+    /// The saved pick, Color when none (or an old value).
     static var saved: AppIconChoice {
-        UserDefaults.standard.string(forKey: key).flatMap(AppIconChoice.init) ?? .dark
+        UserDefaults.standard.string(forKey: key).flatMap(AppIconChoice.init) ?? .color
     }
 
-    /// Puts `saved` on the Dock icon and the bundle. Dark is the bundle's own icon, so it clears the custom one.
-    /// Called at launch and on every pick.
+    /// Puts `saved` on the Dock icon and the bundle. Color is the bundle's own icon, so it clears the custom one; Dark
+    /// goes on as the custom one. Called at launch and on every pick.
     @MainActor
     static func apply() {
         let choice = saved
         let image = choice.image(pixels: 1024)
         NSApp.applicationIconImage = image
-        NSWorkspace.shared.setIcon(choice == .dark ? nil : image, forFile: Bundle.main.bundlePath)
+        NSWorkspace.shared.setIcon(choice == .color ? nil : image, forFile: Bundle.main.bundlePath)
     }
 }

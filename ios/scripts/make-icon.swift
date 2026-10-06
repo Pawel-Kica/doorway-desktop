@@ -1,41 +1,55 @@
-// Renders the iPhone app icon: the Mac icon's white doorway on a full-bleed #2B2B29 square, 1024 px, opaque (iOS
-// rounds the corners itself). Same shapes as Dark in the Mac app's AppIcons.swift, scaled so the square is the Mac
-// tile. Run from app/ios: swift scripts/make-icon.swift
+// Renders the iPhone app icon from the Mac app's color icon (../Assets/DoorwayColor.png): its tile cropped to a square
+// and scaled to a full-bleed 1024 px, opaque, the rounded corners filled with the tile's edge color (iOS rounds the
+// corners itself). Run from app/ios: swift scripts/make-icon.swift
 import AppKit
 
 let px = 1024
-let size = CGFloat(px)
+let source = CGImageSourceCreateImageAtIndex(
+    CGImageSourceCreateWithURL(URL(fileURLWithPath: "../Assets/DoorwayColor.png") as CFURL, nil)!, 0, nil)!
+
+/// RGBA pixels (premultiplied, row 0 on top) of `image` drawn into a `size` square.
+func pixels(_ image: CGImage, size: Int) -> [UInt8] {
+    var data = [UInt8](repeating: 0, count: size * size * 4)
+    let context = CGContext(data: &data, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    context.interpolationQuality = .high
+    context.draw(image, in: CGRect(x: 0, y: 0, width: size, height: size))
+    return data
+}
+
+// The tile is where the (square) source is mostly opaque. Take a centered square inside it, 8 px in from the soft edge,
+// so iOS's own corner mask falls entirely on the solid tile.
+let size = source.width, full = pixels(source, size: size)
+var minX = size, maxX = 0, minY = size, maxY = 0
+for y in 0..<size { for x in 0..<size where full[(y * size + x) * 4 + 3] >= 128 {
+    minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+} }
+let side = min(maxX - minX, maxY - minY) - 16
+let tile = CGRect(x: (minX + maxX - side) / 2, y: (minY + maxY - side) / 2, width: side, height: side)
+let icon = pixels(source.cropping(to: tile)!, size: px)
+
+// Each pixel that isn't solid (the rounded corners, hidden under iOS's mask) goes over the color of the first solid
+// pixel toward the center.
+var out = [UInt8](repeating: 255, count: px * px * 4)
+for y in 0..<px { for x in 0..<px {
+    let i = (y * px + x) * 4
+    let dx = Double(px / 2 - x), dy = Double(px / 2 - y), length = max(1, (dx * dx + dy * dy).squareRoot())
+    var sx = Double(x), sy = Double(y), solid = i, steps = 0
+    while icon[solid + 3] < 250 && steps < px {
+        sx += dx / length; sy += dy / length; steps += 1
+        solid = (Int(sy) * px + Int(sx)) * 4
+    }
+    let alpha = Double(icon[i + 3]) / 255, solidAlpha = max(1, Double(icon[solid + 3])) / 255
+    for c in 0..<3 {
+        let edge = Double(icon[solid + c]) / solidAlpha
+        out[i + c] = UInt8(min(255, (Double(icon[i + c]) + (1 - alpha) * edge).rounded()))
+    }
+} }
+
 // No alpha channel: iOS wants an opaque icon.
-let context = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
+let context = CGContext(data: &out, width: px, height: px, bitsPerComponent: 8, bytesPerRow: px * 4,
                         space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
-NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-
-NSColor(srgbRed: 0x2B / 255, green: 0x2B / 255, blue: 0x29 / 255, alpha: 1).setFill()
-NSRect(x: 0, y: 0, width: size, height: size).fill()
-// The Mac canvas this square is the 80% tile of.
-let canvas = size / 0.8, origin = -canvas * 0.1
-let width = canvas * 0.38, left = origin + (canvas - width) / 2, bottom = origin + canvas * 0.30, top = origin + canvas * 0.78
-let opening = NSBezierPath()
-opening.move(to: NSPoint(x: left, y: bottom))
-opening.line(to: NSPoint(x: left, y: top - width / 2))
-opening.appendArc(withCenter: NSPoint(x: left + width / 2, y: top - width / 2), radius: width / 2, startAngle: 180, endAngle: 0,
-                  clockwise: true)
-opening.line(to: NSPoint(x: left + width, y: bottom))
-opening.close()
-let floor = NSBezierPath()
-floor.move(to: NSPoint(x: left + width * 0.42, y: bottom))
-floor.line(to: NSPoint(x: left + width, y: bottom))
-floor.line(to: NSPoint(x: left + width + canvas * 0.13, y: 0))
-floor.line(to: NSPoint(x: left + canvas * 0.01, y: 0))
-floor.close()
-NSGradient(starting: NSColor.white.withAlphaComponent(0.2), ending: NSColor.white.withAlphaComponent(0))!.draw(in: floor, angle: -90)
-NSColor.white.setFill()
-opening.fill()
-opening.addClip()
-NSColor(white: 0.36, alpha: 1).setFill()
-NSRect(x: left, y: bottom, width: width * 0.46, height: top - bottom).fill()
-
-let out = URL(fileURLWithPath: "App/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
-let destination = CGImageDestinationCreateWithURL(out as CFURL, "public.png" as CFString, 1, nil)!
+let destinationURL = URL(fileURLWithPath: "App/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
+let destination = CGImageDestinationCreateWithURL(destinationURL as CFURL, "public.png" as CFString, 1, nil)!
 CGImageDestinationAddImage(destination, context.makeImage()!, nil)
-print(CGImageDestinationFinalize(destination) ? "Wrote \(out.path)" : "Writing the PNG failed")
+print(CGImageDestinationFinalize(destination) ? "Wrote \(destinationURL.path)" : "Writing the PNG failed")
