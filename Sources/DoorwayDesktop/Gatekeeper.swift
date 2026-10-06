@@ -3,7 +3,7 @@ import Combine
 import DoorwayDesktopCore
 
 /// The gating: watches apps launch, activate and unhide, hides blocklisted ones and asks for a reason,
-/// runs their timers, and quits them on Never mind, time up in the background and super lock.
+/// runs their timers, and quits them on No and Later, time up in the background and super lock.
 /// A gated app launched in the background stays hidden with no prompt for `backgroundLaunchLimit`, then it's quit.
 /// During focus it hides every regular app outside what focus allows, behind the backdrop until it's really gone,
 /// and ends focus when time's up.
@@ -286,15 +286,17 @@ final class Gatekeeper {
 
     private func ask(_ entry: GatedApp, trigger: Trigger) {
         prompt.show(
-            app: entry, trigger: trigger,
-            onSubmit: { [weak self] reason in self?.submit(entry, trigger: trigger, reason: reason) },
-            onCancel: { [weak self] in self?.cancel(entry) })
+            app: entry, trigger: trigger, notes: model.later[entry.bundleId] ?? [],
+            onOpen: { [weak self] need in self?.unlock(entry, trigger: trigger, need: need) },
+            onLater: { [weak self] note in self?.later(entry, note: note) },
+            onNo: { [weak self] in self?.cancel(entry) },
+            onCheckOff: { [weak self] index in self?.model.checkOff(entry.bundleId, at: index) })
     }
 
-    private func submit(_ entry: GatedApp, trigger: Trigger, reason: String) {
-        let reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard wordCount(reason) >= minimumWords else { return }
-        model.record(LogEntry(ts: Date(), bundleId: entry.bundleId, app: entry.name, kind: trigger.kind, reason: reason))
+    /// Yes, then Open: logs what you need (if anything was typed) and opens the app for the session's minutes.
+    private func unlock(_ entry: GatedApp, trigger: Trigger, need: String) {
+        let need = need.trimmingCharacters(in: .whitespacesAndNewlines)
+        model.record(LogEntry(ts: Date(), bundleId: entry.bundleId, app: entry.name, kind: trigger.kind, reason: need.isEmpty ? nil : need))
         model.timers.start(entry.bundleId, minutes: model.rules.minutesPerReason(entry.bundleId, at: Date()), now: Date())
         prompt.close()
         // Doorway Desktop itself isn't active, so it can't hand activation over. Launch Services can.
@@ -303,8 +305,21 @@ final class Gatekeeper {
         NSWorkspace.shared.openApplication(at: process?.bundleURL ?? URL(fileURLWithPath: entry.path), configuration: .init())
     }
 
+    /// Later, then OK: the note waits under the question for the next time, and the app closes like on No. An empty
+    /// OK just closes, like in the extension.
+    private func later(_ entry: GatedApp, note: String) {
+        let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !note.isEmpty else { return cancel(entry) }
+        model.later[entry.bundleId, default: []].append(note)
+        close(entry, LogEntry(ts: Date(), bundleId: entry.bundleId, app: entry.name, kind: .later, reason: note))
+    }
+
     private func cancel(_ entry: GatedApp) {
-        model.record(LogEntry(ts: Date(), bundleId: entry.bundleId, app: entry.name, kind: .cancelled))
+        close(entry, LogEntry(ts: Date(), bundleId: entry.bundleId, app: entry.name, kind: .cancelled))
+    }
+
+    private func close(_ entry: GatedApp, _ logEntry: LogEntry) {
+        model.record(logEntry)
         prompt.close()
         // Quit instead of leaving it hidden: switching to a hidden app flashes its window before we can react,
         // while a fresh launch is covered before it has a window.

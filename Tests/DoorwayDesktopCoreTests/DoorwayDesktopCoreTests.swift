@@ -264,15 +264,6 @@ final class RulesTests: XCTestCase {
     }
 }
 
-final class WordCountTests: XCTestCase {
-    func testCountsWhitespaceSeparatedTokens() {
-        XCTAssertEqual(wordCount(""), 0)
-        XCTAssertEqual(wordCount("   \n "), 0)
-        XCTAssertEqual(wordCount("  one  two\nthree\t four "), 4)
-        XCTAssertEqual(wordCount("a b c d e f g h i j"), minimumWords)
-    }
-}
-
 final class LogTests: XCTestCase {
     private let plusTwo = TimeZone(secondsFromGMT: 7200)!
 

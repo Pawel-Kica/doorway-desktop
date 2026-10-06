@@ -1,21 +1,21 @@
 # Doorway Desktop
 
-A small Mac app that asks you to type a reason before it lets you open a distracting app. It's the desktop half of Doorway, next to the [Doorway extension](https://github.com/Pawel-Kica/doorway-extension) for Chrome.
+A small Mac app that asks "Do you really need it?" before it lets you open a distracting app. It's the desktop half of Doorway, next to the [Doorway extension](https://github.com/Pawel-Kica/doorway-extension) for Chrome.
 
 I built it for myself, omakase style, so it works the way I like it. Fork it and make it yours, or open an issue if you'd like something changed.
 
-![The reason prompt](docs/prompt.webp)
+![The prompt](docs/prompt.webp)
 
 ## What it does
 
-You make blocklists of apps (Signal, WhatsApp, Slack, whatever pulls you in) and sessions that say when those lists count, like weekdays 10:00 to 18:00. During a session, opening a blocked app hides it and asks why you want it. Type at least 10 words and it opens for a few minutes. When the time is up, it asks again. Never mind closes the app.
+You make blocklists of apps (Signal, WhatsApp, Slack, whatever pulls you in) and sessions that say when those lists count, like weekdays 10:00 to 18:00. During a session, opening a blocked app hides it and asks: Do you really need it? Yes asks what you need, then opens it for a few minutes; when the time is up, it asks again. Later asks what you want to do in it later and closes it, and the note shows up the next time you open that app. No closes it.
 
 - **Quick sessions.** Block a list right now, for 30 minutes to 4 hours.
 - **Super lock.** The apps don't open at all, and you can't turn the session off until it ends.
 - **Focus.** Pick an allowlist, and for 25 minutes to 4 hours every other app gets hidden the moment it shows up. Nothing gets quit, so your work stays where you left it.
 - **Zone.** A plain black screen that just says Focus, for a second display.
 - **Music.** A built-in lofi mix plus your own audio files, with the play/pause key.
-- **History.** Every reason you typed, with a few charts. It all lives in `~/Library/Application Support/DoorwayDesktop/reasons.jsonl`, nothing leaves your Mac.
+- **History.** Every answer, with a few charts. It all lives in `~/Library/Application Support/DoorwayDesktop/reasons.jsonl`, nothing leaves your Mac.
 
 It gates desktop apps only. For websites there's the [Doorway extension](https://github.com/Pawel-Kica/doorway-extension).
 

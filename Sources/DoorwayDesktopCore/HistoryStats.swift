@@ -4,8 +4,8 @@ import Foundation
 public enum Outcome: CaseIterable {
     /// A reason was given and the app opened (launch, switch, expired).
     case opened
-    /// Never mind at the prompt: gave up, a win.
-    case neverMind
+    /// No or Later at the prompt: gave up, a win.
+    case notOpened
     /// Kept out without asking: super lock (locked) or a focus session (hidden).
     case blocked
 }
@@ -15,7 +15,7 @@ extension LogKind {
     public var outcome: Outcome? {
         switch self {
         case .launch, .switch, .expired: .opened
-        case .cancelled: .neverMind
+        case .cancelled, .later: .notOpened
         case .locked, .hidden: .blocked
         case .quit, .focus: nil
         }
@@ -25,23 +25,23 @@ extension LogKind {
 /// Attempts split by outcome.
 public struct OutcomeCounts: Equatable {
     public var opened = 0
-    public var neverMind = 0
+    public var notOpened = 0
     public var blocked = 0
 
-    public init(opened: Int = 0, neverMind: Int = 0, blocked: Int = 0) {
+    public init(opened: Int = 0, notOpened: Int = 0, blocked: Int = 0) {
         self.opened = opened
-        self.neverMind = neverMind
+        self.notOpened = notOpened
         self.blocked = blocked
     }
 
-    public var total: Int { opened + neverMind + blocked }
+    public var total: Int { opened + notOpened + blocked }
     /// Attempts that didn't open the app.
-    public var resisted: Int { neverMind + blocked }
+    public var resisted: Int { notOpened + blocked }
 
     public subscript(outcome: Outcome) -> Int {
         switch outcome {
         case .opened: opened
-        case .neverMind: neverMind
+        case .notOpened: notOpened
         case .blocked: blocked
         }
     }
@@ -50,14 +50,14 @@ public struct OutcomeCounts: Equatable {
     mutating func add(_ kind: LogKind) {
         switch kind.outcome {
         case .opened: opened += 1
-        case .neverMind: neverMind += 1
+        case .notOpened: notOpened += 1
         case .blocked: blocked += 1
         case nil: break
         }
     }
 
     public static func + (a: OutcomeCounts, b: OutcomeCounts) -> OutcomeCounts {
-        OutcomeCounts(opened: a.opened + b.opened, neverMind: a.neverMind + b.neverMind, blocked: a.blocked + b.blocked)
+        OutcomeCounts(opened: a.opened + b.opened, notOpened: a.notOpened + b.notOpened, blocked: a.blocked + b.blocked)
     }
 }
 

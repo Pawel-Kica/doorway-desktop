@@ -69,7 +69,7 @@ final class Backdrop {
         shield.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         shield.isReleasedWhenClosed = false
         shield.hidesOnDeactivate = false
-        // Never mind hides Doorway Desktop to hand focus back; focus may still need the backdrop then.
+        // No hides Doorway Desktop to hand focus back; focus may still need the backdrop then.
         shield.canHide = false
         return shield
     }

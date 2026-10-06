@@ -10,6 +10,7 @@ struct DoorwayDesktopApp: App {
         Settings {
             SettingsView(model: model)
         }
+        .windowResizability(.contentMinSize)
     }
 }
 

@@ -33,12 +33,17 @@ final class AppModel: ObservableObject {
     @Published private(set) var now = Date()
     /// Whether Dock clicks on apps focus keeps out get stopped: Accessibility is granted. Set by Gatekeeper.
     @Published var dockGuarded = false
+    /// Notes from Later per bundle ID, shown under the question the next time that app asks.
+    @Published var later: [String: [String]] {
+        didSet { save(later, "later") }
+    }
 
     private let log = ReasonLog(url: ReasonLog.defaultURL)
 
     private init() {
         let defaults = UserDefaults.standard
         entries = log.readAll()
+        later = Self.load("later") ?? [:]
         let allowlists: [Allowlist]? = Self.load("allowlists")
         // Before allowlists focus had only its own apps (`focusApps`, read only here): they become the list "Deep work".
         focusRules = allowlists.map { FocusRules(allowlists: $0, picked: Self.load("focusAllowlists") ?? []) }
@@ -165,6 +170,12 @@ final class AppModel: ObservableObject {
         return panel.urls.compactMap { url in
             Bundle(url: url)?.bundleIdentifier.map { GatedApp(bundleId: $0, name: url.deletingPathExtension().lastPathComponent, path: url.path) }
         }
+    }
+
+    /// A Later note clicked off on the prompt.
+    func checkOff(_ bundleId: String, at index: Int) {
+        guard let notes = later[bundleId], notes.indices.contains(index) else { return }
+        later[bundleId] = notes.count == 1 ? nil : notes.enumerated().filter { $0.offset != index }.map(\.element)
     }
 
     /// Logs `quit`. Quitting is the off switch. The app delegate calls it on the way out: ⌘Q or the Dock.

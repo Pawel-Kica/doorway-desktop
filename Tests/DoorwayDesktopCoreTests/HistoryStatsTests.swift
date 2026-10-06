@@ -22,7 +22,8 @@ private let now = at(day: 23, 15)
 final class HistoryStatsTests: XCTestCase {
     func testOutcomeOfEveryKind() {
         XCTAssertEqual([LogKind.launch, .switch, .expired].map(\.outcome), [.opened, .opened, .opened])
-        XCTAssertEqual(LogKind.cancelled.outcome, .neverMind)
+        XCTAssertEqual(LogKind.cancelled.outcome, .notOpened)
+        XCTAssertEqual(LogKind.later.outcome, .notOpened)
         XCTAssertEqual([LogKind.locked, .hidden].map(\.outcome), [.blocked, .blocked])
         XCTAssertNil(LogKind.quit.outcome)
         XCTAssertNil(LogKind.focus.outcome)
@@ -38,13 +39,13 @@ final class HistoryStatsTests: XCTestCase {
         let days = HistoryStats.days(entries, count: 4, now: now, calendar: utc)
         XCTAssertEqual(days.map(\.day), [at(day: 20, 0), at(day: 21, 0), at(day: 22, 0), at(day: 23, 0)])
         XCTAssertEqual(days.map(\.counts), [
-            OutcomeCounts(opened: 1, neverMind: 1), OutcomeCounts(), OutcomeCounts(blocked: 1), OutcomeCounts(opened: 1, blocked: 1),
+            OutcomeCounts(opened: 1, notOpened: 1), OutcomeCounts(), OutcomeCounts(blocked: 1), OutcomeCounts(opened: 1, blocked: 1),
         ])
         XCTAssertEqual(days.map(\.focusMinutes), [0, 0, 75, 0])
     }
 
     func testTodayComparesWithTheWeekBefore() {
-        // Before today: 16th to 22nd. Two opened + one never mind on the 16th, one never mind on the 22nd. 30 min focus on the 18th.
+        // Before today: 16th to 22nd. Two opened + one didn't open on the 16th, one didn't open on the 22nd. 30 min focus on the 18th.
         var entries = [
             entry(.launch, day: 16, 9), entry(.launch, day: 16, 10), entry(.cancelled, day: 16, 11),
             entry(.cancelled, day: 22, 9), entry(.focus, day: 18, 12, minutes: 30),
@@ -57,7 +58,7 @@ final class HistoryStatsTests: XCTestCase {
         XCTAssertEqual(stats.attemptsAverage!, 4.0 / 7, accuracy: 0.0001)
         XCTAssertEqual(stats.opened, 1)
         XCTAssertEqual(stats.openedAverage!, 2.0 / 7, accuracy: 0.0001)
-        // Last 7 days (17th to 23rd): 1 opened, 3 never mind. The 7 before (10th to 16th): 5 opened, 1 never mind, 1 blocked.
+        // Last 7 days (17th to 23rd): 1 opened, 3 didn't open. The 7 before (10th to 16th): 5 opened, 1 didn't open, 1 blocked.
         XCTAssertEqual(stats.resisted!, 0.75, accuracy: 0.0001)
         XCTAssertEqual(stats.resistedBefore!, 2.0 / 7, accuracy: 0.0001)
         XCTAssertEqual(stats.focusMinutes, 0)
@@ -90,7 +91,7 @@ final class HistoryStatsTests: XCTestCase {
         ]
         let apps = HistoryStats.topApps(entries, days: 20, limit: 4, now: now, calendar: utc)
         XCTAssertEqual(apps.map(\.app), ["Signal", "WhatsApp", "Mail", "Messages"])
-        XCTAssertEqual(apps[0].counts, OutcomeCounts(opened: 1, neverMind: 1, blocked: 1))
+        XCTAssertEqual(apps[0].counts, OutcomeCounts(opened: 1, notOpened: 1, blocked: 1))
         XCTAssertEqual(HistoryStats.topApps(entries, days: 20, now: now, calendar: utc).count, 4)
         XCTAssertEqual(HistoryStats.topApps(entries, days: 30, now: now, calendar: utc).last?.app, "Old")
         XCTAssertEqual(HistoryStats.topApps(entries, days: 1, now: now, calendar: utc).map(\.app), ["Mail", "Messages", "Signal", "WhatsApp"])
@@ -108,7 +109,7 @@ final class HistoryStatsTests: XCTestCase {
         ]
         let hours = HistoryStats.byHour(entries, days: 7, now: now, calendar: utc)
         XCTAssertEqual(hours.count, 24)
-        XCTAssertEqual(hours[9], OutcomeCounts(opened: 1, neverMind: 1))
+        XCTAssertEqual(hours[9], OutcomeCounts(opened: 1, notOpened: 1))
         XCTAssertEqual(hours[0], OutcomeCounts(blocked: 1))
         XCTAssertEqual(hours.map(\.total).reduce(0, +), 3)
     }

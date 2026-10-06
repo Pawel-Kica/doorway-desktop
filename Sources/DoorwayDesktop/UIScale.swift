@@ -8,9 +8,8 @@ enum UIScale {
     static let key = "uiScale"
     static let standard = 1.25
     static let range = 1.0...2.0
-    /// One ⌘+ or ⌘− step, and the choices in General.
+    /// One ⌘+ or ⌘− step.
     static let step = 0.25
-    static let choices = [1.0, 1.25, 1.5, 1.75, 2.0]
 
     /// `scale` moved by `steps`, kept in range.
     static func stepped(_ scale: Double, by steps: Int) -> Double {
@@ -26,17 +25,6 @@ enum UIScale {
     static func size(_ width: CGFloat, _ height: CGFloat, scale: Double) -> CGSize {
         let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: CGFloat.infinity, height: .infinity)
         return CGSize(width: min(width * scale, screen.width * 0.9), height: min(height * scale, screen.height * 0.9))
-    }
-}
-
-extension NSWindow {
-    /// Moves the window back inside the visible part of its screen. Too big to fit, its top left corner stays on screen.
-    func keepOnScreen() {
-        guard let visible = screen?.visibleFrame else { return }
-        var frame = frame
-        frame.origin.x = max(visible.minX, min(frame.minX, visible.maxX - frame.width))
-        frame.origin.y = min(visible.maxY - frame.height, max(frame.minY, visible.minY))
-        if frame != self.frame { setFrameOrigin(frame.origin) }
     }
 }
 

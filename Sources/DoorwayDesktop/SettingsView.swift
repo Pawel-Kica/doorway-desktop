@@ -2,13 +2,13 @@ import DoorwayDesktopCore
 import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case focus = "Focus", zone = "Zone", music = "Music", sessions = "Sessions", blocklists = "Blocklists", allowlists = "Allowlists",
+    case zone = "Zone", focus = "Focus", music = "Music", sessions = "Sessions", blocklists = "Blocklists", allowlists = "Allowlists",
          general = "General", history = "History"
     var id: Self { self }
     var symbol: String {
         switch self {
-        case .focus: "scope"
         case .zone: "moon"
+        case .focus: "scope"
         case .music: "music.note"
         case .sessions: "calendar"
         case .blocklists: "list.bullet.rectangle"
@@ -19,17 +19,17 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// Settings window: sidebar with Focus, Zone, Music, Sessions, Blocklists, Allowlists, General, History, drawn at the
+/// Settings window: sidebar with Zone, Focus, Music, Sessions, Blocklists, Allowlists, General, History, drawn at the
 /// `uiScale` size.
-/// ⌘+, ⌘− and ⌘0 change the size while it's open, the toolbar's sidebar button or ⌘B hides and shows the sidebar,
-/// ⌘[ and ⌘] go to the previous and next tab. The window can't be resized, it's 960 x 680 times the scale.
+/// ⌘+, ⌘− and ⌘0 zoom the content, the toolbar's sidebar button or ⌘B hides and shows the sidebar,
+/// ⌘[ and ⌘] go to the previous and next tab, ⌘1 to ⌘8 jump to one. The window resizes freely, macOS keeps its frame.
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     @AppStorage(UIScale.key) private var scale = UIScale.standard
     @State private var columns = NavigationSplitViewVisibility.all
 
     var body: some View {
-        let size = UIScale.size(960, 680, scale: scale)
+        let ideal = UIScale.size(960, 680, scale: UIScale.standard)
         NavigationSplitView(columnVisibility: $columns) {
             List(SettingsTab.allCases, selection: Binding(get: { model.settingsTab }, set: { if let tab = $0 { model.settingsTab = tab } })) { tab in
                 Label(tab.rawValue, systemImage: tab.symbol)
@@ -39,13 +39,13 @@ struct SettingsView: View {
                     .tag(tab)
             }
             .navigationSplitViewColumnWidth(210 * scale)
-            // Our own button instead: the system one's collapse and expand glitched the sidebar in this fixed-size window.
+            // Our own button instead: the system one's collapse and expand glitched the sidebar.
             .toolbar(removing: .sidebarToggle)
         } detail: {
             Group {
                 switch model.settingsTab {
-                case .focus: FocusPane(model: model)
                 case .zone: ZonePane()
+                case .focus: FocusPane(model: model)
                 case .music: MusicPane()
                 case .sessions: SessionsPane(model: model)
                 case .blocklists:
@@ -69,8 +69,7 @@ struct SettingsView: View {
                     .help("Hide or show the sidebar (⌘B)")
             }
         }
-        // An exact size rather than a minimum: the window isn't resizable, so it shrinks back only this way.
-        .frame(width: size.width, height: size.height)
+        .frame(minWidth: 720, idealWidth: ideal.width, maxWidth: .infinity, minHeight: 480, idealHeight: ideal.height, maxHeight: .infinity)
         .background { SizeShortcuts(scale: $scale) }
         .background {
             Group {
@@ -78,6 +77,9 @@ struct SettingsView: View {
                 // Work with the sidebar hidden too: they're on the window, not the list.
                 Button("Previous tab") { model.settingsTab = model.settingsTab.stepped(by: -1) }.keyboardShortcut("[")
                 Button("Next tab") { model.settingsTab = model.settingsTab.stepped(by: 1) }.keyboardShortcut("]")
+                ForEach(Array(SettingsTab.allCases.enumerated()), id: \.element) { index, tab in
+                    Button(tab.rawValue) { model.settingsTab = tab }.keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+                }
             }
             .opacity(0).accessibilityHidden(true)
         }
@@ -85,15 +87,15 @@ struct SettingsView: View {
             WindowReader { window in
                 // Settings windows get the preferences toolbar: title on top, then an empty row meant for tab icons.
                 window.toolbarStyle = .unifiedCompact
-                // The fixed frame pins the window's min size to its size, so showing the sidebar tried to grow the
-                // window: the split view overflowed left, then snapped back. With constraints it squeezes the detail.
+                // Settings windows aren't resizable by default.
+                window.styleMask.insert(.resizable)
+                // Showing the sidebar could try to grow the window: the split view overflowed left, then snapped back.
+                // With constraints it squeezes the detail.
                 (window.contentView?.firstSplitView()?.delegate as? NSSplitViewController)?
                     .splitViewItems.first?.collapseBehavior = .useConstraints
             }
         }
         .environment(\.uiScale, scale)
-        // The window grows from its top left corner, which can push its bottom off the screen.
-        .onChange(of: scale) { DispatchQueue.main.async { NSApp.keyWindow?.keepOnScreen() } }
     }
 
     private func toggleSidebar() {
@@ -593,7 +595,7 @@ private struct TimeField: View {
 }
 
 private struct GeneralPane: View {
-    @AppStorage(UIScale.key) private var scale = UIScale.standard
+    @Environment(\.uiScale) private var scale
     @AppStorage(AppIconChoice.key) private var appIcon = AppIconChoice.dark.rawValue
 
     var body: some View {
@@ -601,19 +603,6 @@ private struct GeneralPane: View {
             SectionTitle(title: "General") {}
             Card {
                 CardRow(divider: false) {
-                    SettingRow(title: "Size") {
-                        // Chips instead of a segmented picker, which doesn't grow with the scale.
-                        HStack(spacing: 6 * scale) {
-                            ForEach(UIScale.choices, id: \.self) { choice in
-                                Toggle(isOn: Binding(get: { scale == choice }, set: { if $0 { scale = choice } })) {
-                                    Text("\(Int((choice * 100).rounded()))%").bezelPadding()
-                                }
-                                .toggleStyle(.button)
-                            }
-                        }
-                    }
-                }
-                CardRow {
                     SettingRow(title: "App icon") {
                         HStack(spacing: 4 * scale) {
                             ForEach(AppIconChoice.allCases) { choice in
@@ -888,7 +877,7 @@ private struct HistoryRow: View {
                     // "25 min on Obsidian, Todoist"
                     Text([entry.minutes.map(durationText), entry.reason].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " on "))
                         .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                } else if entry.kind.hasReason, let reason = entry.reason {
+                } else if entry.kind.hasReason || entry.kind == .later, let reason = entry.reason {
                     Text(reason).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -940,6 +929,7 @@ private struct KindPill: View {
         case .hidden: .purple
         case .focus: .green
         case .cancelled, .quit: .gray
+        case .later: .teal
         }
         Text(kind.rawValue)
             .scaledFont(12, weight: .semibold)

@@ -15,12 +15,10 @@ enum Trigger {
     }
 
     /// The question, the app's name in Doorway's warm light.
-    func question(_ app: String) -> Text {
-        let name = Text(app).foregroundStyle(Doorway.light)
-        return switch self {
-        case .launch: Text("Why are you opening \(name)?")
-        case .switch: Text("Why are you switching to \(name)?")
-        case .expired: Text("Time's up. Why stay in \(name)?")
+    func question(_ name: Text) -> Text {
+        switch self {
+        case .launch, .switch: Text("Do you really need \(name)?")
+        case .expired: Text("Time's up. Do you still need \(name)?")
         }
     }
 }
@@ -70,13 +68,9 @@ private final class PromptPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
-private final class PromptText: ObservableObject {
-    @Published var value = ""
-}
-
-/// The reason prompt: a see-through panel above all windows, centered on the black backdrop, so the gated app's window
-/// can't be seen even when it briefly unhides itself. Looks like Doorway's ask page. One at a time.
-/// Return or ⌘↵ submits once there are enough words, Esc cancels. The same panel shows the super lock notice.
+/// The prompt: a see-through panel over the main screen, above all windows and the black backdrop, so the gated app's
+/// window can't be seen even when it briefly unhides itself. Doorway's ask page, 1:1. One at a time. Esc is No.
+/// The same panel shows the super lock notice.
 @MainActor
 final class PromptController {
     private let backdrop: Backdrop
@@ -90,12 +84,14 @@ final class PromptController {
         self.backdrop = backdrop
     }
 
-    func show(app: GatedApp, trigger: Trigger, onSubmit: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
-        let text = PromptText()
-        let view = PromptView(app: app, trigger: trigger, text: text, onSubmit: { onSubmit(text.value) }, onCancel: onCancel)
-        open(view, for: app, onEscape: onCancel) {
-            if wordCount(text.value) >= minimumWords { onSubmit(text.value) }
-        }
+    /// "Do you really need Signal?": Yes asks what you need, then `onOpen` with it (may be empty); Later asks what to
+    /// do later, then `onLater` with it; No is `onNo`. `notes` are earlier Later notes, `onCheckOff` gets the index of
+    /// one clicked off.
+    func show(app: GatedApp, trigger: Trigger, notes: [String], onOpen: @escaping (String) -> Void,
+              onLater: @escaping (String) -> Void, onNo: @escaping () -> Void, onCheckOff: @escaping (Int) -> Void) {
+        let view = PromptView(app: app, trigger: trigger, notes: notes, onOpen: onOpen, onLater: onLater, onNo: onNo,
+                              onCheckOff: onCheckOff)
+        open(view, for: app, onEscape: onNo)
     }
 
     /// "Signal is super locked until 10:00." Esc, OK, ⌘↵ or 6 seconds close it, so it can't stay stuck on screen.
@@ -106,13 +102,14 @@ final class PromptController {
         }
     }
 
-    private func open(_ view: some View, for app: GatedApp, onEscape: @escaping () -> Void, onCommandReturn: @escaping () -> Void) {
-        let host = NSHostingView(rootView: view)
-        let size = host.fittingSize
+    /// The panel covers the main screen with the view centered, so it can change size (Yes, Later, Back).
+    private func open(_ view: some View, for app: GatedApp, onEscape: @escaping () -> Void, onCommandReturn: (() -> Void)? = nil) {
+        let screen = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let host = NSHostingView(rootView: view.frame(maxWidth: .infinity, maxHeight: .infinity))
 
         // Keyboard focus comes from bringToFront(), which activates Doorway Desktop; being key alone isn't enough on macOS 14+.
-        let panel = PromptPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
-                                backing: .buffered, defer: false)
+        let panel = PromptPanel(contentRect: screen, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.setFrame(screen, display: false)
         panel.contentView = host
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
@@ -122,9 +119,6 @@ final class PromptController {
         panel.level = .modalPanel
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.appearance = NSAppearance(named: .darkAqua)
-        if let screen = NSScreen.main?.frame {
-            panel.setFrameOrigin(NSPoint(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2))
-        }
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak panel] event in
             guard event.window === panel else { return event }
@@ -132,7 +126,7 @@ final class PromptController {
                 onEscape()
                 return nil
             }
-            if [36, 76].contains(event.keyCode), event.modifierFlags.contains(.command) {
+            if let onCommandReturn, [36, 76].contains(event.keyCode), event.modifierFlags.contains(.command) {
                 onCommandReturn()
                 return nil
             }
@@ -166,39 +160,105 @@ final class PromptController {
     }
 }
 
-/// Doorway's ask page, 1:1: the question, one pill input, two buttons. Open stays dimmed until the reason has
-/// `minimumWords` words.
-private struct PromptView: View {
+/// Doorway's ask page, 1:1: "Do you really need Signal?" with Yes / Later / No, then for Yes or Later one line to type
+/// in (Return submits, any text or none) with Back. Later notes from earlier show under the question, a click checks
+/// one off.
+struct PromptView: View {
+    enum Step { case question, need, later }
+
     let app: GatedApp
     let trigger: Trigger
-    @ObservedObject var text: PromptText
-    let onSubmit: () -> Void
-    let onCancel: () -> Void
+    @State var notes: [String]
+    let onOpen: (String) -> Void
+    let onLater: (String) -> Void
+    let onNo: () -> Void
+    let onCheckOff: (Int) -> Void
+    @State var step = Step.question
+    @State var text = ""
     @FocusState private var focused: Bool
 
     var body: some View {
-        let enough = wordCount(text.value) >= minimumWords
+        let name = Text(app.name).foregroundStyle(Doorway.light)
         DoorwayPage {
-            trigger.question(app.name)
-            TextField("", text: $text.value)
-                .textFieldStyle(.plain)
-                .font(.system(size: 20, weight: .medium))
-                .multilineTextAlignment(.center)
-                .tint(Doorway.light)
-                .focused($focused)
-                .onSubmit { if enough { onSubmit() } }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 14)
-                .frame(width: 592)
-                .background(.white.opacity(0.08), in: Capsule())
-            HStack(spacing: 14) {
-                Button("Never mind", action: onCancel).buttonStyle(PillButtonStyle())
-                Button("Open \(app.name)", action: onSubmit)
-                    .buttonStyle(PillButtonStyle(primary: true))
-                    .disabled(!enough)
+            switch step {
+            case .question:
+                trigger.question(name)
+                if !notes.isEmpty {
+                    NoteList(notes: notes) { index in
+                        notes.remove(at: index)
+                        onCheckOff(index)
+                    }
+                }
+                HStack(spacing: 14) {
+                    Button("Yes") { step = .need }.buttonStyle(PillButtonStyle())
+                    Button("Later") { step = .later }.buttonStyle(PillButtonStyle())
+                    Button("No", action: onNo).buttonStyle(PillButtonStyle(primary: true))
+                }
+            case .need:
+                Text("What do you need in \(name)?")
+                input { onOpen(text) }
+                HStack(spacing: 14) {
+                    Button("Back", action: back).buttonStyle(PillButtonStyle())
+                    Button("Open") { onOpen(text) }.buttonStyle(PillButtonStyle(primary: true))
+                }
+            case .later:
+                Text("What do you want to do in \(name) later?")
+                input { onLater(text) }
+                HStack(spacing: 14) {
+                    Button("Back", action: back).buttonStyle(PillButtonStyle())
+                    Button("OK") { onLater(text) }.buttonStyle(PillButtonStyle(primary: true))
+                }
             }
         }
-        .onAppear { DispatchQueue.main.async { focused = true } }
+    }
+
+    private func back() {
+        text = ""
+        step = .question
+    }
+
+    /// Doorway's one-line pill input, focused as soon as it shows.
+    private func input(submit: @escaping () -> Void) -> some View {
+        TextField("", text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 20, weight: .medium))
+            .multilineTextAlignment(.center)
+            .tint(Doorway.light)
+            .focused($focused)
+            .onSubmit(submit)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+            .frame(width: 592)
+            .background(.white.opacity(0.08), in: Capsule())
+            .onAppear { DispatchQueue.main.async { focused = true } }
+    }
+}
+
+/// Later notes for the app: "You wanted to:" and a line each, a click on one checks it off.
+private struct NoteList: View {
+    let notes: [String]
+    let checkOff: (Int) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("You wanted to:").foregroundStyle(.white.opacity(0.6))
+            ForEach(Array(notes.enumerated()), id: \.offset) { index, note in
+                Button { checkOff(index) } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Image(systemName: "circle").foregroundStyle(Doorway.light)
+                        Text(note).multilineTextAlignment(.leading)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Done")
+            }
+        }
+        .font(.system(size: 20, weight: .medium))
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
+        .frame(width: 592, alignment: .leading)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 24))
     }
 }
 

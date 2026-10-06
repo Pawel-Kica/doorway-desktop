@@ -86,7 +86,7 @@ extension Outcome {
     var label: String {
         switch self {
         case .opened: "Opened"
-        case .neverMind: "Never mind"
+        case .notOpened: "Didn't open"
         case .blocked: "Blocked"
         }
     }
@@ -95,7 +95,7 @@ extension Outcome {
     func color(_ scheme: ColorScheme) -> Color {
         switch self {
         case .opened: .blue
-        case .neverMind: scheme == .dark ? Color(hex: 0x199E70) : Color(hex: 0x1BAF7A)
+        case .notOpened: scheme == .dark ? Color(hex: 0x199E70) : Color(hex: 0x1BAF7A)
         case .blocked: scheme == .dark ? Color(hex: 0xD95926) : Color(hex: 0xEB6834)
         }
     }
@@ -107,7 +107,7 @@ private extension Color {
     }
 }
 
-/// "3 opened, 5 never mind", zero outcomes left out.
+/// "3 opened, 5 didn't open", zero outcomes left out.
 private func describe(_ counts: OutcomeCounts) -> String {
     let parts = Outcome.allCases.filter { counts[$0] > 0 }.map { "\(counts[$0]) \($0.label.lowercased())" }
     return parts.isEmpty ? "No attempts" : parts.joined(separator: ", ")

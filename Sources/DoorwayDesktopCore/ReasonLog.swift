@@ -4,9 +4,10 @@ public enum LogKind: String, Codable {
     /// `locked`: a super-locked app tried to open and was quit.
     /// `hidden`: an app outside a focus session tried to come forward and was hidden.
     /// `focus`: a focus session ended; `reason` lists its allowed apps, `minutes` how long it ran.
-    case launch, `switch`, expired, cancelled, locked, quit, hidden, focus
+    /// `later`: Later on the prompt, `reason` is the note. `cancelled` is No.
+    case launch, `switch`, expired, cancelled, locked, quit, hidden, focus, later
 
-    /// Kinds that carry a typed reason.
+    /// Kinds that opened the app, with what you needed in it as `reason` when something was typed.
     public var hasReason: Bool { self == .launch || self == .switch || self == .expired }
 }
 
