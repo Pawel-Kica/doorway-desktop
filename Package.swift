@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "SimpleBlock",
+    name: "DoorwayDesktop",
     platforms: [.macOS(.v14)],
     targets: [
-        .target(name: "SimpleBlockCore"),
-        .executableTarget(name: "SimpleBlock", dependencies: ["SimpleBlockCore"]),
-        .testTarget(name: "SimpleBlockCoreTests", dependencies: ["SimpleBlockCore"]),
+        .target(name: "DoorwayDesktopCore"),
+        .executableTarget(name: "DoorwayDesktop", dependencies: ["DoorwayDesktopCore"]),
+        .testTarget(name: "DoorwayDesktopCoreTests", dependencies: ["DoorwayDesktopCore"]),
     ]
 )

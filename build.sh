@@ -1,33 +1,37 @@
 #!/bin/bash
-# Builds /Applications/Simple Block.app (so Raycast and Spotlight find it): release binary + Info.plist, ad-hoc signed.
+# Builds /Applications/Doorway Desktop.app (so Raycast and Spotlight find it): release binary + Info.plist, ad-hoc signed.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-swift build -c release --product SimpleBlock
-BIN="$(swift build -c release --show-bin-path)/SimpleBlock"
-APP="/Applications/Simple Block.app"
+swift build -c release --product DoorwayDesktop
+BIN="$(swift build -c release --show-bin-path)/DoorwayDesktop"
+APP="/Applications/Doorway Desktop.app"
 
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-# Copied next to the old binary and renamed over it: writing into the binary of a running Simple Block kills it.
+# Copied next to the old binary and renamed over it: writing into the binary of a running Doorway Desktop kills it.
 # This way the running one keeps its copy and the new build starts on the next launch.
-cp "$BIN" "$APP/Contents/MacOS/SimpleBlock.new"
-mv -f "$APP/Contents/MacOS/SimpleBlock.new" "$APP/Contents/MacOS/SimpleBlock"
+cp "$BIN" "$APP/Contents/MacOS/DoorwayDesktop.new"
+mv -f "$APP/Contents/MacOS/DoorwayDesktop.new" "$APP/Contents/MacOS/DoorwayDesktop"
 cp Assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# Doorway's color icon: the Color app icon pick, and the icon on the prompt.
+cp Assets/DoorwayColor.png "$APP/Contents/Resources/DoorwayColor.png"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIdentifier</key><string>com.pawel.simple-block</string>
-    <key>CFBundleName</key><string>SimpleBlock</string>
-    <key>CFBundleDisplayName</key><string>Simple Block</string>
-    <key>CFBundleExecutable</key><string>SimpleBlock</string>
+    <key>CFBundleIdentifier</key><string>com.pawel.doorway-desktop</string>
+    <key>CFBundleName</key><string>Doorway Desktop</string>
+    <key>CFBundleDisplayName</key><string>Doorway Desktop</string>
+    <key>CFBundleExecutable</key><string>DoorwayDesktop</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
+    <!-- The look from before macOS 26. Built with the 26 SDK the sidebar turns into a floating panel, a second border inside the window's. -->
+    <key>UIDesignRequiresCompatibility</key><true/>
 </dict>
 </plist>
 PLIST

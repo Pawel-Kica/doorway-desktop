@@ -1,4 +1,4 @@
-import SimpleBlockMobileCore
+import DoorwayMobileCore
 import XCTest
 
 final class GateStateTests: XCTestCase {

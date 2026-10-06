@@ -1,6 +1,6 @@
 import Foundation
 
-/// An iPhone app Simple Block can gate. The raw value is the stable ID used in storage and in simpleblock://gate/<id>.
+/// An iPhone app Doorway can gate. The raw value is the stable ID used in storage and in doorway://gate/<id>.
 /// The AppEnum conformance for Shortcuts lives in the app target (App/GatedApp+AppEnum.swift).
 public enum GatedApp: String, Codable, CaseIterable, CodingKeyRepresentable, Sendable {
     case signal, messages, whatsapp, telegram, messenger, instagram, x, slack, discord, mail, gmail, linkedin, youtube

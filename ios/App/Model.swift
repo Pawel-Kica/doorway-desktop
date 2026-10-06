@@ -21,7 +21,7 @@ final class Model {
         let data = UserDefaults.standard.data(forKey: Self.key)
         state = data.flatMap { try? JSONDecoder().decode(GateState.self, from: $0) } ?? GateState()
         // Launch argument `-gate signal` opens straight on the prompt, for simulator screenshots (simctl openurl asks
-        // "Open in Simple Block?" first, which can't be tapped headless).
+        // "Open in Doorway?" first, which can't be tapped headless).
         pending = UserDefaults.standard.string(forKey: "gate").flatMap(GatedApp.init(rawValue:))
     }
 

@@ -22,7 +22,7 @@ extension GatedApp: AppEnum {
 }
 
 /// The one action in a "<App> Is Opened, Run Immediately" automation. Returns silently while the app is unlocked,
-/// otherwise brings Simple Block forward with the prompt.
+/// otherwise brings Doorway forward with the prompt.
 struct GateAppIntent: AppIntent {
     static let title: LocalizedStringResource = "Gate App"
     static let description = IntentDescription("Asks for a reason before the app opens. Lets it through for a few minutes after one.")
@@ -43,7 +43,7 @@ struct GateAppIntent: AppIntent {
         do {
             try await continueInForeground(alwaysConfirm: false)
         } catch {
-            // Declined or not allowed: don't leave a stale prompt for the next time Simple Block opens.
+            // Declined or not allowed: don't leave a stale prompt for the next time Doorway opens.
             model.pending = nil
             throw error
         }
@@ -70,10 +70,10 @@ struct NeedsReasonIntent: AppIntent {
     }
 }
 
-/// Plan B, step 2: opens Simple Block with the prompt.
+/// Plan B, step 2: opens Doorway with the prompt.
 struct AskReasonIntent: AppIntent {
     static let title: LocalizedStringResource = "Ask Reason"
-    static let description = IntentDescription("Opens Simple Block and asks for a reason.")
+    static let description = IntentDescription("Opens Doorway and asks for a reason.")
     static let supportedModes: IntentModes = .foreground(.immediate)
 
     @Parameter(title: "App")

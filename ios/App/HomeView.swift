@@ -25,7 +25,7 @@ struct HomeView: View {
                 Section {
                     step(1, "Shortcuts > Automation > + > App.")
                     step(2, "Pick Signal, check Is Opened, choose Run Immediately, turn Notify When Run off, tap Next.")
-                    step(3, "New Blank Automation, add Gate App from Simple Block, set App to Signal.")
+                    step(3, "New Blank Automation, add Gate App from Doorway, set App to Signal.")
                     step(4, "Repeat for each app you want to gate.")
                 } header: {
                     Text("Setup")
@@ -33,7 +33,7 @@ struct HomeView: View {
                     Text("Plan B, if Gate App asks for confirmation every time: make the automation Needs Reason (App: Signal), then If Result is true, then Ask Reason (App: Signal).")
                 }
             }
-            .navigationTitle("Simple Block")
+            .navigationTitle("Doorway")
         }
     }
 

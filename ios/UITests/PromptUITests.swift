@@ -1,12 +1,12 @@
 import XCTest
 
-/// Opens the prompt through simpleblock://gate/signal, types a reason and checks "Open Signal" enables at exactly the
+/// Opens the prompt through doorway://gate/signal, types a reason and checks "Open Signal" enables at exactly the
 /// required word count (read from the "0 / 5 words" label, so it works whatever is already logged today).
 final class PromptUITests: XCTestCase {
     func testOpenEnablesAfterEnoughWords() throws {
         let app = XCUIApplication()
         app.launch()
-        app.open(URL(string: "simpleblock://gate/signal")!)
+        app.open(URL(string: "doorway://gate/signal")!)
 
         XCTAssertTrue(app.staticTexts["Why open Signal?"].waitForExistence(timeout: 10))
         let counter = app.staticTexts["words"]
